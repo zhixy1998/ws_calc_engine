@@ -14,8 +14,7 @@ aerich upgrade 应用迁移文件
 
 """
 
-load_dotenv()
-
+load_dotenv(override=True)
 TORTOISE_ORM = {
     "connections": {"default": os.getenv("DB_URL")},
     "apps": {
