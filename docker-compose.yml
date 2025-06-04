@@ -6,6 +6,8 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: fastapi_app
+    env_file:
+      - .env
     ports:
       - "8000:8000"
     depends_on:
@@ -14,13 +16,13 @@ services:
       DB_HOST: db
       DB_PORT: 3306
       DB_USER: root
-      DB_PASSWORD: mypassword
-      DB_NAME: mydatabase
+      DB_PASSWORD: 123456
+      DB_NAME: mydb
     volumes:
       - .:/app
 
   db:
-    image: mysql:5.7.0
+    image: mysql:5.7
     container_name: mysql
     restart: always
     environment:
@@ -30,6 +32,6 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql  # 挂载初始化脚本
 volumes:
   mysql_data:
