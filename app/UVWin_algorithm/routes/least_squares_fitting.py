@@ -54,4 +54,4 @@ async def least_squares_fitting(
         raise APIException(ErrorCode.OPERATION_FAILED)
 
     # 输出拟合结果为JSON格式
-    return coefficients.update(code=0)
+    return {**coefficients, "code": 0}

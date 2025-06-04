@@ -1,45 +1,46 @@
 import asyncio
 import httpx
 import time
+import pytest
 
-URL = "http://127.0.0.1:8000/least_squares_fitting?x_data=1,2,3,4,5&y_data=2,4,6,8,10&degree=1&force_zero=0"
-BASE_URL = "http://127.0.0.1:8000/least_squares_fitting"
+# URL = "http://127.0.0.1:8000/least_squares_fitting?x_data=1,2,3,4,5&y_data=2,4,6,8,10&degree=1&force_zero=0"
+BASE_URL = "/least_squares_fitting"
 
-# 请求次数和间隔（毫秒）
-TOTAL_REQUESTS = 50
-INTERVAL_MS = 2
+# # 请求次数和间隔（毫秒）
+# TOTAL_REQUESTS = 50
+# INTERVAL_MS = 2
 
-# 请求处理函数
-async def send_request(client, index, results):
-    start = time.time()
-    try:
-        response = await client.get(URL)
-        duration = (time.time() - start) * 1000
-        results[index] = duration
-        print(f"[{index+1:02d}] 状态码: {response.status_code}, 用时: {duration:.2f} ms")
-    except Exception as e:
-        results[index] = -1
-        print(f"[{index+1:02d}] 请求失败: {e}")
+# # 请求处理函数
+# async def send_request(client, index, results):
+#     start = time.time()
+#     try:
+#         response = await client.get(URL)
+#         duration = (time.time() - start) * 1000
+#         results[index] = duration
+#         print(f"[{index+1:02d}] 状态码: {response.status_code}, 用时: {duration:.2f} ms")
+#     except Exception as e:
+#         results[index] = -1
+#         print(f"[{index+1:02d}] 请求失败: {e}")
 
-# 主函数
-async def main():
-    async with httpx.AsyncClient() as client:
-        tasks = []
-        results = [0] * TOTAL_REQUESTS
+# # 主函数
+# async def main():
+#     async with httpx.AsyncClient() as client:
+#         tasks = []
+#         results = [0] * TOTAL_REQUESTS
 
-        for i in range(TOTAL_REQUESTS):
-            task = asyncio.create_task(send_request(client, i, results))
-            tasks.append(task)
-            await asyncio.sleep(INTERVAL_MS / 1000.0)  # 每次间隔 2ms 发一个请求
+#         for i in range(TOTAL_REQUESTS):
+#             task = asyncio.create_task(send_request(client, i, results))
+#             tasks.append(task)
+#             await asyncio.sleep(INTERVAL_MS / 1000.0)  # 每次间隔 2ms 发一个请求
 
-        await asyncio.gather(*tasks)
+#         await asyncio.gather(*tasks)
 
-        total_time = sum(r for r in results if r >= 0)
-        avg_time = total_time / len([r for r in results if r >= 0])
-        print(f"\n🔥 请求总数: {TOTAL_REQUESTS}")
-        print(f"✅ 成功数: {len([r for r in results if r >= 0])}")
-        print(f"⏱️ 平均响应时间: {avg_time:.2f} ms")
-        print(f"⏱️ 总响应时间:{total_time:.2f} ms")
+#         total_time = sum(r for r in results if r >= 0)
+#         avg_time = total_time / len([r for r in results if r >= 0])
+#         print(f"\n🔥 请求总数: {TOTAL_REQUESTS}")
+#         print(f"✅ 成功数: {len([r for r in results if r >= 0])}")
+#         print(f"⏱️ 平均响应时间: {avg_time:.2f} ms")
+#         print(f"⏱️ 总响应时间:{total_time:.2f} ms")
 
 
 # 测试用例
@@ -99,26 +100,25 @@ def assert_approx_equal(value, expected, key):
     else:
         if abs(value - expected) > TOLERANCE:
             raise AssertionError(f"{key}: {value} != {expected} (±{TOLERANCE})")
-        
-async def run_test_case(client, case):
-    response = await client.get(BASE_URL, params=case["params"])
-    data = response.json()
-    print(f"\n=== {case['desc']} ===")
-    print("请求参数:", case["params"])
-    print("返回结果:", data)
 
-    for key, expected_val in case["expected"].items():
-        actual_val = data.get(key)
-        assert_approx_equal(actual_val, expected_val, key)
+@pytest.mark.asyncio 
+async def test_run_all_case(async_client):
+    for case in test_cases:
+        response = await async_client.post(BASE_URL,  json=case["params"])
+        data = response.json()
+        assert data['code'] == 0
+        print(f"\n=== {case['desc']} ===")
+        print("请求参数:", case["params"])
+        print("返回结果:", data)
 
-    print("✅ 断言通过")
+        for key, expected_val in case["expected"].items():
+            actual_val = data.get(key)
+            assert_approx_equal(actual_val, expected_val, key)
+
+        print("✅ 断言通过")
 
 
-async def main_case():
-    async with httpx.AsyncClient(timeout=10) as client:
-        await asyncio.gather(*(run_test_case(client, case) for case in test_cases))
 
 
 # 运行
-asyncio.run(main())
-asyncio.run(main_case())
+# asyncio.run(main())

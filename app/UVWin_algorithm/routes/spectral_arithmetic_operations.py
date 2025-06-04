@@ -38,8 +38,10 @@ async def spectrum_math(data: SpectrumMathRequest):
             result_y = [a / b if b != 0 else 0 for a, b in zip(data.y1_data, data.y2_data)]
         else:
             raise APIException(ErrorCode.INVALID_ARGUMENT)
+    except APIException:
+        raise  # 保留自定义异常，原样抛出
     except Exception as e:
-        raise APIException(ErrorCode.OPERATION_FAILED, str(e))
+        raise APIException(ErrorCode.OPERATION_FAILED)
 
     return SpectrumMathResponse(
         code=0,
