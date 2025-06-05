@@ -1,11 +1,15 @@
+version: "3.8"
+
 services:
   fastapi:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: fastapi_app
+    env_file:
+      - .env
     ports:
-      - "8000:8000"
+      - "8002:8002"
     depends_on:
       - db
     environment:
@@ -16,8 +20,6 @@ services:
       DB_NAME: mydb
     volumes:
       - .:/app
-    # 使用默认CMD，启动FastAPI
-    # command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   db:
     image: mysql:5.7
@@ -30,6 +32,6 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql  # 挂载初始化脚本
 volumes:
   mysql_data:
