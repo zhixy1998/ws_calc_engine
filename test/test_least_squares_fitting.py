@@ -104,7 +104,14 @@ def assert_approx_equal(value, expected, key):
 @pytest.mark.asyncio 
 async def test_run_all_case(async_client):
     for case in test_cases:
-        response = await async_client.post(BASE_URL,  json=case["params"])
+        param_str = case['params']
+        post_json = {
+            'x_data': param_str['x_data'].split(','),
+            'y_data': param_str['y_data'].split(','),
+            'degree': int(param_str['degree']),
+            'force_zero': int(param_str['force_zero'])
+        }
+        response = await async_client.post(BASE_URL,  json=post_json)
         data = response.json()
         assert data['code'] == 0
         print(f"\n=== {case['desc']} ===")

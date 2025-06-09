@@ -14,12 +14,12 @@ from exceptions.command_exception import APIException
 router = APIRouter()
 
 class PeakRequest(BaseModel):
-    x_data: List[float] = Field(..., description="x 坐标数组，例如：[1.0, 2.0, 3.0, 4.0]", example=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-    y_data: List[float] = Field(..., description="y 值数组，例如：[0.1, 0.8, 0.2, 1.1]", example=[0.1, 1.2, 0.5, 2.5, 0.3, 3.0, 0.7, 1.5, 0.2, 0.0])
-    height: Optional[float] = Field(None, description="过滤峰值的最小高度", example=1.0)
-    distance: Optional[int] = Field(None, description="两个峰之间的最小间距（索引）", example=2)
-    smooth: Optional[int] = Field(0, description="是否平滑，0=否，1=是", example=1)
-    round: Optional[int] = Field(3, description="小数点精度", example=3)
+    x_data: List[float] = Field(..., description="x 坐标数组，例如：[1.0, 2.0, 3.0, 4.0]", json_schema_extra={"example": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]})
+    y_data: List[float] = Field(..., description="y 值数组，例如：[0.1, 0.8, 0.2, 1.1]", json_schema_extra={"example": [0.1, 1.2, 0.5, 2.5, 0.3, 3.0, 0.7, 1.5, 0.2, 0.0]})
+    height: Optional[float] = Field(None, description="过滤峰值的最小高度", json_schema_extra={"example": 1.0})
+    distance: Optional[int] = Field(None, description="两个峰之间的最小间距（索引）", json_schema_extra={"example": 2})
+    smooth: Optional[int] = Field(0, description="是否平滑，0=否，1=是", json_schema_extra={"example": 1})
+    round: Optional[int] = Field(3, description="小数点精度", json_schema_extra={"example": 3})
 
 class PeakResponse(BaseModel):
     code: int = Field(..., description="状态码")
@@ -35,7 +35,7 @@ class PeakResponse(BaseModel):
 
 
 @router.post("/find_peaks", response_model=PeakResponse)
-async def find_peaks_post(data: PeakRequest):
+def find_peaks_post(data: PeakRequest):
     x = np.array(data.x_data)
     y = np.array(data.y_data)
     round_num = data.round

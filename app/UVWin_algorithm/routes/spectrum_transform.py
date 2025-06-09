@@ -10,7 +10,7 @@ router = APIRouter()
 
 class SpectrumTransformRequest(BaseModel):
     y_data: List[float] = Field(..., description="谱图的 y 值")
-    transform_type: int = Field(..., description="变换类型：0=Abs->T%，1=T%->Abs，2=Abs->R%，3=R%->Abs，4=log10，5=倒数", example=0)
+    transform_type: int = Field(..., description="变换类型：0=Abs->T%，1=T%->Abs，2=Abs->R%，3=R%->Abs，4=log10，5=倒数", json_schema_extra={"example": 0})
 
 class SpectrumTransformResponse(BaseModel):
     code: int
@@ -29,8 +29,8 @@ class SpectrumTransformResponse(BaseModel):
 
 """
 
-@router.post("/spectrum_transform", response_model=SpectrumTransformResponse)
-async def spectrum_transform(data: SpectrumTransformRequest):
+@router.post("", response_model=SpectrumTransformResponse)
+def spectrum_transform(data: SpectrumTransformRequest):
     try:
         y = np.array([float(val) for val in data.y_data])
         if data.transform_type == 0:

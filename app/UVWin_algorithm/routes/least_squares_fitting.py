@@ -32,7 +32,7 @@ class OutPutSchema(BaseModel):
     coefficients: Optional[List[float]] = Field(None, description="所有系数列表，顺序为 k0, k1, ..., kn")
 
 @router.post("", response_model=OutPutSchema, response_model_exclude_none=True)
-async def least_squares_fitting(
+def least_squares_fitting(
     data: InputSchema
 ):
 
