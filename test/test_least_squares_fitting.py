@@ -1,6 +1,6 @@
-import asyncio
-import httpx
-import time
+"""
+最小二乘拟合
+"""
 import pytest
 
 # URL = "http://127.0.0.1:8000/least_squares_fitting?x_data=1,2,3,4,5&y_data=2,4,6,8,10&degree=1&force_zero=0"

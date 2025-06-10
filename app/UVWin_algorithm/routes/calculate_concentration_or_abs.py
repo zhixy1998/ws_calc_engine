@@ -25,6 +25,12 @@ class OutPutSchema(BaseModel):
 def calculate_concentration_or_abs(
     input_data: InputSchema,
 ):
+    """
+    abs = f(x) * c
+    f(x): 最小二次拟合
+    abs: 吸光度
+    c: 浓度
+    """
     if input_data.mode not in (0, 1):
         raise APIException(ErrorCode.INVALID_MODE)
     return OutPutSchema(code=0, value=fit_data(input_data.coeffs, input_data.value, input_data.mode))

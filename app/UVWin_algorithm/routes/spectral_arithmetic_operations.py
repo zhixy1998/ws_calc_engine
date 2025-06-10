@@ -20,9 +20,9 @@ class SpectrumMathResponse(BaseModel):
     code: int
     message: str
     x_data: List[float]
-    result_y: List[float]
+    y_data: List[float]
 
-@router.post("/spectrum_math", response_model=SpectrumMathResponse)
+@router.post("", response_model=SpectrumMathResponse)
 def spectrum_math(data: SpectrumMathRequest):
     if len(data.x_data) != len(data.y1_data) or len(data.y1_data) != len(data.y2_data):
         raise APIException(ErrorCode.X_Y_LENGTH_MISMATCH)
@@ -47,5 +47,5 @@ def spectrum_math(data: SpectrumMathRequest):
         code=0,
         message="Success",
         x_data=data.x_data,
-        result_y=result_y
+        y_data=result_y
     )

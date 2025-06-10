@@ -75,10 +75,10 @@ def find_peaks_post(data: PeakRequest):
         "message": "Success",
         "peak_indices": peaks.tolist(),
         "peak_x": x[peaks].tolist(),
-        "peak_y": y_smooth[peaks].tolist(),
+        "peak_y": [round(i, round_num) for i in y_smooth[peaks].tolist()],
         "num_peaks": len(peaks),
         "peak_areas": peak_areas,
         "peak_widths": [round(i, round_num) for i in results_half[0].tolist()],  # 半峰宽对应x轴单位可以根据需求转换
-        "smoothed_y": y_smooth.tolist(),  # 如果需要可返回
+        "smoothed_y": [round(i, round_num) for i in y_smooth.tolist()],  # 如果需要可返回
         "differentiated_y": [round(i, round_num) for i in np.gradient(y_smooth).tolist()]  # 如果需要可返回
     }
