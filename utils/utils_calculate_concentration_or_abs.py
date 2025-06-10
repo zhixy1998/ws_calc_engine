@@ -9,12 +9,12 @@ from pydantic import BaseModel, Field
 def fit_data(coeffs, value, mode):
     coeffs = coeffs[::-1]
     value = float(value)
-    if mode == 1:
+    if mode == 1: # 浓度求吸光度
         # 多项式直接代入
         y = np.polyval(coeffs, value)
         return round(y, 4)
 
-    if mode == 0:
+    if mode == 0: # 吸光度求浓度
         coeffs_copy = coeffs.copy()
         coeffs_copy[-1] -= value  # 多项式减去 y
         roots = np.roots(coeffs_copy)
