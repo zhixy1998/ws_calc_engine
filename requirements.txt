@@ -6,6 +6,7 @@ anyio==4.5.2
 asttokens==3.0.0
 asyncclick==8.1.7.2
 backcall==0.2.0
+black==24.8.0
 certifi==2025.4.26
 click==8.1.8
 contourpy==1.1.1
@@ -37,13 +38,16 @@ MarkupSafe==2.1.5
 matplotlib==3.7.5
 matplotlib-inline==0.1.7
 mdurl==0.1.2
+mypy-extensions==1.1.0
 numpy==1.24.4
 packaging==25.0
 pandas==2.0.3
 parso==0.8.4
+pathspec==0.12.1
 pexpect==4.9.0
 pickleshare==0.7.5
 pillow==10.4.0
+platformdirs==4.3.6
 pluggy==1.5.0
 prompt-toolkit==3.0.51
 ptyprocess==0.7.0
@@ -68,7 +72,6 @@ shellingham==1.5.4
 simpleeval==0.9.13
 six==1.17.0
 sniffio==1.3.1
-some-package==0.1
 stack-data==0.6.3
 starlette==0.44.0
 tomli==2.2.1
