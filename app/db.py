@@ -16,7 +16,10 @@ aerich upgrade 应用迁移文件
 
 load_dotenv(override=True)
 
-
+db_url = os.getenv("DB_URL")
+if not db_url:
+    raise RuntimeError("DB_URL 环境变量没有设置")
+    
 TORTOISE_ORM = {
     "connections": {"default": os.getenv("DB_URL")},
     "apps": {
