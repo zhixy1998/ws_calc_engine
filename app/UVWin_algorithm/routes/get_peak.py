@@ -19,22 +19,25 @@ class PeakRequest(BaseModel):
     height: Optional[float] = Field(None, description="过滤峰值的最小高度", json_schema_extra={"example": 1.0})
     distance: Optional[int] = Field(None, description="两个峰之间的最小间距（索引）", json_schema_extra={"example": 2})
     smooth: Optional[int] = Field(0, description="是否平滑，0=否，1=是", json_schema_extra={"example": 1})
-    round: Optional[int] = Field(3, description="小数点精度", json_schema_extra={"example": 3})
+    round: Optional[int] = Field(0, description="小数点精度", json_schema_extra={"example": 3})
 
 class PeakResponse(BaseModel):
     code: int = Field(..., description="状态码")
     message: Optional[str] = Field(None, description="消息")
+
+    # 峰数据
     peak_x: List[float] = Field(..., description="峰值对应的 x 坐标")
     peak_y: List[float] = Field(..., description="峰值对应的 y 值")
     num_peaks: int = Field(..., description="检测到的峰数量")
     peak_indices: List[int] = Field(..., description="峰值在原始数组中的索引位置")
     peak_areas: Optional[List[float]] = Field(None, description="峰面积")
     peak_widths: Optional[List[float]] = Field(None, description="半峰宽")
+
     smoothed_y: Optional[List[float]] = Field(None, description="平滑后的Y值")
     differentiated_y: Optional[List[float]] = Field(None, description="微分后的Y值")
 
 
-@router.post("/find_peaks", response_model=PeakResponse)
+@router.post("", response_model=PeakResponse)
 def find_peaks_post(data: PeakRequest):
     x = np.array(data.x_data)
     y = np.array(data.y_data)
@@ -69,16 +72,32 @@ def find_peaks_post(data: PeakRequest):
         right_ip = int(results_half[3][i])  # 右边界索引
         area = round(np.trapz(y_smooth[left_ip:right_ip + 1], x[left_ip:right_ip + 1]), round_num)
         peak_areas.append(area)
+    
+
+
+    if round_num:
+        peak_y = [round(i, round_num) for i in y_smooth[peaks].tolist()]
+        peak_width_list = [round(i, round_num) for i in results_half[0].tolist()]  # 半峰宽对应x轴单位可以根据需求转换
+        smoothed_y = [round(i, round_num) for i in y_smooth.tolist()]  # 如果需要可返回
+        differentiated_y = [round(i, round_num) for i in np.gradient(y_smooth).tolist()]  # 如果需要可返回
+    else:
+        peak_y = y_smooth[peaks].tolist()
+        peak_width_list = results_half[0].tolist()
+        smoothed_y = y_smooth.tolist()
+        differentiated_y = np.gradient(y_smooth).tolist()
 
     return {
         "code": 0,
         "message": "Success",
+
+        # 峰数据
         "peak_indices": peaks.tolist(),
         "peak_x": x[peaks].tolist(),
-        "peak_y": [round(i, round_num) for i in y_smooth[peaks].tolist()],
+        "peak_y": peak_y,
         "num_peaks": len(peaks),
         "peak_areas": peak_areas,
-        "peak_widths": [round(i, round_num) for i in results_half[0].tolist()],  # 半峰宽对应x轴单位可以根据需求转换
-        "smoothed_y": [round(i, round_num) for i in y_smooth.tolist()],  # 如果需要可返回
-        "differentiated_y": [round(i, round_num) for i in np.gradient(y_smooth).tolist()]  # 如果需要可返回
+        "peak_widths": peak_width_list,
+
+        "smoothed_y": smoothed_y,
+        "differentiated_y": differentiated_y
     }

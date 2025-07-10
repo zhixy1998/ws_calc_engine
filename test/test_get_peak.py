@@ -4,7 +4,7 @@
 
 import pytest
 from exceptions.error import ErrorCode
-BASE_URL = '/get_peak/find_peaks'
+BASE_URL = '/get_peak/find_peaks_and_valleys'
 
 @pytest.mark.asyncio
 async def test_get_peak(async_client):
@@ -21,6 +21,7 @@ async def test_get_peak(async_client):
     response = await async_client.post(BASE_URL,  json=post_json)
     data = response.json()
     # 返回结果结构性测试
+    print("data========", data)
     assert len(data['peak_x']) == len(data['peak_y']) == len(data['peak_indices']) == len(data['peak_areas']) == len(data['peak_widths'])
     # 返回结果正确性测试
     assert data['code'] == 0
