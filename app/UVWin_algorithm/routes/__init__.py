@@ -9,6 +9,7 @@ from . import detect_step_skipe
 from . import smoothed
 from . import differentiated
 from . import get_valley
+from . import get_peaks_and_valleys
 
 router = APIRouter()
 
@@ -18,6 +19,7 @@ router.include_router(calculate_concentration_or_abs.router, prefix='/calculate_
 router.include_router(algebraic_operations.router, prefix='/algebraic_operations', tags=['代数运算，用户自定义运算'])
 router.include_router(get_peak.router, prefix='/get_peak', tags=['寻峰'])
 router.include_router(get_valley.router, prefix='/get_valley', tags=['寻谷'])
+router.include_router(get_peaks_and_valleys.router, prefix='/get_peaks_and_valleys', tags=['同时寻峰寻谷'])
 router.include_router(spectral_arithmetic_operations.router, prefix='/spectral_arithmetic_operations', tags=['谱图的四则运算'])
 router.include_router(spectrum_transform.router, prefix='/spectrum_transform', tags=['谱图变换'])
 router.include_router(detect_step_skipe.router, prefix='/detect_step_skipe', tags=['消除台阶或者倒刺'])
