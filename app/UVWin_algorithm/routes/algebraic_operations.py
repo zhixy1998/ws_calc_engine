@@ -15,8 +15,8 @@ router = APIRouter()
 
 class InputSchema(BaseModel):
     formula_string: str = Field(..., description="计算公式字符串，例如: (体积+0.9)/重量*稀释倍数", json_schema_extra={'example':'(体积+0.9)/重量*稀释倍数'})
-    independent_ariable_string: str = Field(..., description='自变量字符串集合：体积,重量,稀释倍数', json_schema_extra={'example':'体积,重量,稀释倍数'})
-    independent_ariable_value: str = Field(..., description='自变量依次对应的数值:2.0,3,1.5', json_schema_extra={'example':'2.0,3,1.5'})
+    independent_variable_string: str = Field(..., description='自变量字符串集合：体积,重量,稀释倍数', json_schema_extra={'example':'体积,重量,稀释倍数'})
+    independent_variable_value: str = Field(..., description='自变量依次对应的数值:2.0,3,1.5', json_schema_extra={'example':'2.0,3,1.5'})
 
 class OutPutSchema(BaseModel):
     code: int
@@ -24,26 +24,26 @@ class OutPutSchema(BaseModel):
 
 @router.post('', response_model=OutPutSchema)
 def algebraic_operations(data: InputSchema):
-    independent_ariable_string_list = data.independent_ariable_string.split(',')
-    independent_ariable_value_list = data.independent_ariable_value.split(',')
+    independent_variable_string_list = data.independent_variable_string.split(',')
+    independent_variable_value_list = data.independent_variable_value.split(',')
     formula_string = data.formula_string
 
-    if len(independent_ariable_string_list) != len(independent_ariable_value_list):
-        raise APIException(ErrorCode.INDEPENDENT_ARIABLE_STRING_VALUE_LENGTH_NOT_EQUAL)
+    if len(independent_variable_string_list) != len(independent_variable_value_list):
+        raise APIException(ErrorCode.INDEPENDENT_variable_STRING_VALUE_LENGTH_NOT_EQUAL)
     
-    for v in independent_ariable_string_list:
+    for v in independent_variable_string_list:
         if v not in data.formula_string:
-            raise APIException(ErrorCode.VARIABLE_NOT_IN_FORMULA)
+            raise APIException(ErrorCode.Vvariable_NOT_IN_FORMULA)
 
-    for v in independent_ariable_value_list:
+    for v in independent_variable_value_list:
         try:
             float(v)
         except APIException:
-            raise APIException(ErrorCode.VARIABLE_VALUE_NOT_NUMERIC)
+            raise APIException(ErrorCode.Vvariable_VALUE_NOT_NUMERIC)
     
     variables = {}
-    for i, v in enumerate(independent_ariable_string_list):
-        variables[independent_ariable_string_list[i]] = independent_ariable_value_list[i]
+    for i, v in enumerate(independent_variable_string_list):
+        variables[independent_variable_string_list[i]] = independent_variable_value_list[i]
     for var, val in variables.items():
         formula_string = formula_string.replace(var, str(val))
         

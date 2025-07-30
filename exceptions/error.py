@@ -27,5 +27,5 @@ class ErrorCode(Enum):
     VARIABLE_VALUE_NOT_NUMERIC = Error(1005, zh="自变量依次对应的数值中包含了非数字")
     INVALID_MODE = Error(1006, zh="无效的 mode，请使用 0 或 1")
     X_Y_LENGTH_MISMATCH = Error(1007, zh="横轴和纵轴长度必须一致")
-    HEIGHT_MUST_BE_LESS_THAN_OR_EQUAL_1 = Error(1008, zh="height 必须小于等于 1")
+    HEIGHT_MUST_BE_BETWEEN_0_AND_1 = Error(1008, zh="height 必须在 0 到 1 之间")
     X_Y_MUST_NUM = Error(1009, zh='x y 必须为数字')
