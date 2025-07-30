@@ -1,10 +1,9 @@
-
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
 import numpy as np
-from scipy.signal import find_peaks, peak_widths, savgol_filter
+from scipy.signal import find_peaks, peak_widths, savgol_filter, argrelmax
 
 from exceptions.error import ErrorCode
 from exceptions.command_exception import APIException
@@ -14,7 +13,7 @@ router = APIRouter()
 class PeakRequest(BaseModel):
     x_data: List[float] = Field(..., description="x 坐标数组，例如：[1.0, 2.0, 3.0, 4.0]", json_schema_extra={"example": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]})
     y_data: List[float] = Field(..., description="y 值数组，例如：[0.1, 0.8, 0.2, 1.1]", json_schema_extra={"example": [0.1, 1.2, 0.5, 2.5, 0.3, 3.0, 0.7, 1.5, 0.2, 0.0]})
-    height: Optional[float] = Field(None, description="过滤峰值的最小高度", json_schema_extra={"example": 1.0})
+    height: Optional[float] = Field(None, description="谷峰差阈值（0-1之间的比例值）", json_schema_extra={"example": 0.3})
     distance: Optional[int] = Field(None, description="两个峰之间的最小间距（索引）", json_schema_extra={"example": 2})
     smooth: Optional[int] = Field(0, description="是否平滑，0=否，1=是", json_schema_extra={"example": 1})
     round: Optional[int] = Field(0, description="小数点精度", json_schema_extra={"example": 3})
@@ -36,6 +35,63 @@ class OutSchema(BaseModel):
     differentiated_y: Optional[List[float]] = Field(None, description="微分后的Y值")
 
 
+def calculate_valley_peak_differences(y_data, valley_indices):
+    """
+    计算每个谷与其相邻峰的谷峰差
+    
+    Args:
+        y_data: 平滑后的y值数组
+        valley_indices: 谷的索引数组
+    
+    Returns:
+        valley_peak_diffs: 每个谷的谷峰差列表
+    """
+    if len(valley_indices) == 0:
+        return []
+    
+    # 找到所有局部最大值（峰）
+    peaks = argrelmax(y_data, order=1)[0]
+    
+    # 如果没有找到峰，使用数组边界作为峰
+    if len(peaks) == 0:
+        peaks = np.array([0, len(y_data) - 1])
+    else:
+        # 确保边界也被考虑为潜在的峰
+        peaks = np.concatenate([[0], peaks, [len(y_data) - 1]])
+        peaks = np.unique(peaks)
+    
+    valley_peak_diffs = []
+    
+    for valley_idx in valley_indices:
+        valley_value = y_data[valley_idx]
+        
+        # 找到谷左侧最近的峰
+        left_peaks = peaks[peaks < valley_idx]
+        if len(left_peaks) > 0:
+            left_peak_idx = left_peaks[-1]  # 最近的左侧峰
+            left_peak_value = y_data[left_peak_idx]
+        else:
+            left_peak_value = float('-inf')  # 没有左侧峰
+        
+        # 找到谷右侧最近的峰
+        right_peaks = peaks[peaks > valley_idx]
+        if len(right_peaks) > 0:
+            right_peak_idx = right_peaks[0]  # 最近的右侧峰
+            right_peak_value = y_data[right_peak_idx]
+        else:
+            right_peak_value = float('-inf')  # 没有右侧峰
+        
+        # 计算谷峰差：相邻的最高峰值减去谷值
+        adjacent_peak_value = max(left_peak_value, right_peak_value)
+        if adjacent_peak_value == float('-inf'):
+            # 如果没有相邻峰，使用全局最大值
+            adjacent_peak_value = np.max(y_data)
+        
+        valley_peak_diff = adjacent_peak_value - valley_value
+        valley_peak_diffs.append(valley_peak_diff)
+    
+    return valley_peak_diffs
+
 @router.post("", response_model=OutSchema)
 def find_valley_post(data: PeakRequest):
     x = np.array(data.x_data)
@@ -44,8 +100,8 @@ def find_valley_post(data: PeakRequest):
 
     if len(x) != len(y):
         raise APIException(ErrorCode.X_Y_LENGTH_MISMATCH)
-    if data.height is not None and data.height > 1:
-        raise APIException(ErrorCode.HEIGHT_MUST_BE_LESS_THAN_OR_EQUAL_1)
+    if data.height is not None and (data.height < 0 or data.height > 1):
+        raise APIException(ErrorCode.HEIGHT_MUST_BE_BETWEEN_0_AND_1)
 
     # 先做平滑（可选）
     if data.smooth == 1:
@@ -56,23 +112,34 @@ def find_valley_post(data: PeakRequest):
     # 将Y值取反以寻谷
     y_inverted = -y_smooth
 
-    # 谷的深度阈值 (相对于取反后Y值的最大值)
-    # 例如，如果原始最小值是0.1，取反是-0.1。如果原始最小值是-5，取反是5。
-    # 我们用 np.max(y_inverted) * data.height 来设置阈值，找到“最深”的谷（取反后是最高的峰）
-    valley_depth_threshold = None
-    if data.height is not None:
-        valley_depth_threshold = np.min(y_inverted) * data.height
-
-    valleys, valley_properties = find_peaks(y_inverted, height=valley_depth_threshold, distance=data.distance)
+    # 首先找到所有可能的谷（不使用height过滤）
+    all_valleys, valley_properties = find_peaks(y_inverted, distance=data.distance)
+    
+    # 如果指定了height参数，使用谷峰差进行过滤
+    if data.height is not None and len(all_valleys) > 0:
+        # 计算每个谷的谷峰差
+        valley_peak_diffs = calculate_valley_peak_differences(y_smooth, all_valleys)
+        
+        # 计算全局峰谷差范围作为参考
+        global_range = np.max(y_smooth) - np.min(y_smooth)
+        threshold = global_range * data.height
+        
+        # 根据谷峰差过滤谷
+        valid_valley_mask = np.array(valley_peak_diffs) >= threshold
+        valleys = all_valleys[valid_valley_mask]
+    else:
+        valleys = all_valleys
 
     # 计算半谷宽 (对取反后的数据计算半峰宽，rel_height 0.5 依然有效)
     valley_widths_results = peak_widths(y_inverted, valleys, rel_height=0.5)
 
-    # 计算谷深度 (即取反后峰的高度) 和 半谷宽 (x轴上的宽度)
-    if 'peak_heights' in valley_properties and valley_properties['peak_heights'].size > 0:
-        valley_depths = [round(h, round_num) for h in valley_properties['peak_heights'].tolist()]
+    # 计算谷深度：直接使用y_inverted在valleys索引位置的值
+    if len(valleys) > 0:
+        valley_depths = [round(y_inverted[v], round_num) for v in valleys]
     else:
         valley_depths = []
+
+    # 计算谷深度 (即取反后峰的高度) 和 半谷宽 (x轴上的宽度)
     valley_widths_at_half = [round(i, round_num) for i in valley_widths_results[0].tolist()]
 
     if round_num:
