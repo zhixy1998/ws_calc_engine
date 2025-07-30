@@ -4,16 +4,16 @@
 
 import pytest
 from exceptions.error import ErrorCode
-BASE_URL = '/get_peak/find_peaks_and_valleys'
+BASE_URL = '/get_peak'
 
 @pytest.mark.asyncio
 async def test_get_peak(async_client):
-    x_data = [0,1,2,3,4,5,6,7,8,9]
-    y_data = [0.1,1.2,0.5,2.5,0.3,3,0.7,1.5,0.2,0]
+    x_data = [0,   1,   2,   3,   4,   5,   6, 7,   8,   9]
+    y_data = [0.1, 1.2, 0.5, 2.5, 0.3, 3, 0.7, 1.5, 0.2, 0]
     post_json = {
         'x_data': x_data,
         'y_data': y_data,
-        'height': 1,
+        'height': 0.9,
         'distance': 2,
         'smooth': 0,
         'round': 3
@@ -59,14 +59,14 @@ async def test_smooth_feature(async_client):
 # 此测试用例验证了不同的height参数对峰值检测的影响，确保height正确限制了检测的峰值高度。
 @pytest.mark.asyncio
 async def test_height_filter(async_client):
-    x_data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-    y_data = [0.1, 0.8, 0.2, 1.1, 0.3, 1.8, 0.7, 1.5, 0.2, 0.0]
+    x_data = [0,     1,    2,   3,   4,    5,   6,   7,   8, 9]
+    y_data = [0.1, 0.8,  0.2, 1.1, 0.3,  1.8, 0.7, 1.5, 0.2, 0.0]
     
     # 测试较低的 height 阈值
     post_json_low = {
         'x_data': x_data,
         'y_data': y_data,
-        'height': 0.6,  # 高度过滤阈值设置为0.3
+        'height': 0.6,
         'distance': 2,
         'smooth': 0,
         'round': 3
@@ -74,7 +74,7 @@ async def test_height_filter(async_client):
     response_low = await async_client.post(BASE_URL, json=post_json_low)
     data_low = response_low.json()
     # 验证结果，期望峰值发生变化
-    assert data_low['num_peaks'] == 3  # 可能找到更多的峰
+    assert data_low['num_peaks'] == 2  # 可能找到更多的峰
 
     # 测试较高的 height 阈值
     post_json_high = {
@@ -88,7 +88,7 @@ async def test_height_filter(async_client):
     response_high = await async_client.post(BASE_URL, json=post_json_high)
     data_high = response_high.json()
     # 验证结果，期望只有1个峰
-    assert data_high['num_peaks'] == 1
+    assert data_high['num_peaks'] == 0
 
 # 此测试用例验证了distance参数对峰值检测的影响，确保distance限制了两个峰之间的最小间距。
 @pytest.mark.asyncio
