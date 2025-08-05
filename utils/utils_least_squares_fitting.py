@@ -85,7 +85,7 @@ def fit_data(x, y, degree, force_zero):
                 "R2": round(calc_r2(y, y_pred), 4),
                 "R": round(np.sqrt(calc_r2(y, y_pred)), 4),
                 "coefficients": cleaned_reversed,
-                "equation": generate_equation(coefficients),
+                "equation": generate_equation(cleaned_reversed, force_zero=force_zero),
                 "image_base64": plot_fit(x, y, y_pred),
                 "standard_error": round(rmse, 4),
                 "rmse": round(rmse, 4),
@@ -118,10 +118,13 @@ def calc_r2(y_true, y_pred):
     ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
     return 1 - (ss_res / ss_tot)
 
-def generate_equation(coefficients):
+def generate_equation(coefficients, force_zero=0):
     """生成方程字符串"""
     terms = []
     for i, coef in enumerate(coefficients):
+        if force_zero and i == 0:
+            continue  # 强制过零点，跳过常数项
+        
         coef_val = round(float(coef), 4)
         if coef_val == 0:
             continue
