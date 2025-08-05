@@ -46,3 +46,4 @@ docs/_build/
 venv/
 .venv
 .vscode/
+.idea/

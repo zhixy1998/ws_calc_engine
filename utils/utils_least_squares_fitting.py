@@ -92,8 +92,9 @@ def fit_data(x, y, degree, force_zero):
                 "residual_std": round(residual_std, 4),
                 "chi_squared": round(chi_squared, 4),
             }
-            for i, c in enumerate(cleaned_reversed):
-                result[f'k{i}'] = c
+            result['k0'] = 0.0
+            for i in range(1, len(cleaned_reversed)):
+                result[f'k{i}'] = cleaned_reversed[i]
             return result
     else:
         # 不强制过零点，直接 polyfit

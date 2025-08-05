@@ -79,6 +79,7 @@ def least_squares_fitting(
     try:
         coefficients = fit_data(x, y, data.degree, data.force_zero)
     except Exception as e:
+        print(e)
         raise APIException(ErrorCode.OPERATION_FAILED)
 
     # 输出拟合结果为JSON格式
