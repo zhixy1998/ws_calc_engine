@@ -3,13 +3,14 @@
 """
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import numpy as np
 from scipy.signal import find_peaks, peak_widths, savgol_filter, argrelmin
 
 from exceptions.error import ErrorCode
 from exceptions.command_exception import APIException
+from utils.utils_data_format import convert_scientific_notation
 
 router = APIRouter()
 
@@ -27,13 +28,13 @@ class PeakResponse(BaseModel):
 
     # 峰数据
     peak_x: List[float] = Field(..., description="峰值对应的 x 坐标")
-    peak_y: List[float] = Field(..., description="峰值对应的 y 值")
+    peak_y: List[Union[float, str]] = Field(..., description="峰值对应的 y 值")
     num_peaks: int = Field(..., description="检测到的峰数量")
     peak_indices: List[int] = Field(..., description="峰值在原始数组中的索引位置")
     peak_areas: Optional[List[float]] = Field(None, description="峰面积")
     peak_widths: Optional[List[float]] = Field(None, description="半峰宽")
 
-    smoothed_y: Optional[List[float]] = Field(None, description="平滑后的Y值")
+    smoothed_y: Optional[List[Union[float, str]]] = Field(None, description="平滑后的Y值")
     differentiated_y: Optional[List[float]] = Field(None, description="微分后的Y值")
 
 
@@ -143,16 +144,19 @@ def find_peaks_post(data: PeakRequest):
 
 
     if round_num:
-        peak_y = [round(i, round_num) for i in y_smooth[peaks].tolist()]
+        peak_y_raw = y_smooth[peaks].tolist()
+        peak_y_converted = convert_scientific_notation(peak_y_raw)
+        peak_y = [round(i, round_num) for i in peak_y_converted]
         peak_width_list = [round(i, round_num) for i in results_half[0].tolist()]  # 半峰宽对应x轴单位可以根据需求转换
         smoothed_y = [round(i, round_num) for i in y_smooth.tolist()]  # 如果需要可返回
         differentiated_y = [round(i, round_num) for i in np.gradient(y_smooth).tolist()]  # 如果需要可返回
     else:
-        peak_y = y_smooth[peaks].tolist()
+        peak_y_raw = y_smooth[peaks].tolist()
+        peak_y = convert_scientific_notation(peak_y_raw)
         peak_width_list = results_half[0].tolist()
         smoothed_y = y_smooth.tolist()
         differentiated_y = np.gradient(y_smooth).tolist()
-
+    print("peak_y", peak_y)
     return {
         "code": 0,
         "message": "Success",
@@ -165,6 +169,6 @@ def find_peaks_post(data: PeakRequest):
         "peak_areas": peak_areas,
         "peak_widths": peak_width_list,
 
-        "smoothed_y": smoothed_y,
+        "smoothed_y": convert_scientific_notation(smoothed_y),
         "differentiated_y": differentiated_y
     }

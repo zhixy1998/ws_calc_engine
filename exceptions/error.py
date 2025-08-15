@@ -29,3 +29,4 @@ class ErrorCode(Enum):
     X_Y_LENGTH_MISMATCH = Error(1007, zh="横轴和纵轴长度必须一致")
     HEIGHT_MUST_BE_BETWEEN_0_AND_1 = Error(1008, zh="height 必须在 0 到 1 之间")
     X_Y_MUST_NUM = Error(1009, zh='x y 必须为数字')
+    IMPOSSIBLE_FITTING = Error(1010, zh='数据无法进行指定的拟合，数学上不可行')
