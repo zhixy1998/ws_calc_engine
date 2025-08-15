@@ -6,6 +6,37 @@ matplotlib.use('Agg')
 import numpy as np
 import matplotlib.pyplot as plt
 from numpy.polynomial import Polynomial
+import statsmodels.api as sm
+
+def calculate_confidence_intervals(x, y, degree, force_zero=False, alpha=0.05):
+    """使用 statsmodels 计算置信区间"""
+    try:
+        # 构造特征矩阵
+        if force_zero:
+            # 强制过零点，不包含常数项
+            X = np.vander(x, degree + 1, increasing=True)[:, 1:]  # 去掉常数项
+        else:
+            # 正常拟合，包含常数项
+            X = np.vander(x, degree + 1, increasing=True)
+        
+        # 检查数据点数量
+        if len(x) <= X.shape[1]:
+            # 数据点太少，无法计算置信区间
+            return None
+        
+        # 拟合模型
+        model = sm.OLS(y, X).fit()
+        
+        # 计算置信区间
+        conf_int = model.conf_int(alpha=alpha)  # alpha=0.05 表示95%置信区间
+        
+        # 转换为列表格式，并四舍五入到合理精度
+        conf_int_rounded = [[round(interval[0], 6), round(interval[1], 6)] for interval in conf_int.tolist()]
+        return conf_int_rounded
+        
+    except Exception as e:
+        # 如果计算失败，返回 None
+        return None
 
 def handle_small_coefficients(coefficients):
     """处理非常小的系数，避免浮动误差"""
@@ -36,14 +67,14 @@ def fit_data(x, y, degree, force_zero):
             r = np.sqrt(r2)
             rmse = np.sqrt(np.mean((y - y_pred) ** 2))
             residual_std = np.std(y - y_pred)
-            chi_squared = np.sum(((y - y_pred) ** 2) / y_pred)
+            # 卡方计算，避免除零错误
+            # 当 y_pred 为 0 时，跳过该项或使用小的替代值
+            y_pred_safe = np.where(np.abs(y_pred) < 1e-10, np.nan, y_pred)
+            chi_squared_terms = ((y - y_pred) ** 2) / y_pred_safe
+            chi_squared = np.nansum(chi_squared_terms)  # 忽略 NaN 值
         
-            # 置信区间估算（近似，仅适用于一元线性回归）
-            n = len(x)
-            x_mean = np.mean(x)
-            s_err = np.sum((y - y_pred)**2)
-            t = 2.131  # 95% confidence for small n (e.g. df=10)
-            conf = t * np.sqrt((s_err / (n - 2)) * (1 / np.sum((x - x_mean)**2)))
+            # 使用 statsmodels 计算置信区间
+            confidence_95 = calculate_confidence_intervals(x, y, degree, force_zero=True)
             return {
                 "degree": degree,
                 "R2": round(r2, 4),
@@ -54,7 +85,7 @@ def fit_data(x, y, degree, force_zero):
                 "equation": f"y = {round(k1, 4)}x",
                 "image_base64": plot_fit(x, y, y_pred),
                 "standard_error": round(rmse, 4),
-                "confidence_95": [[round(0.0, 4), round(0.0, 4)], [round(k1 - conf, 4), round(k1 + conf, 4)]],
+                "confidence_95": confidence_95,
                 "rmse": round(rmse, 4),
                 "residual_std": round(residual_std, 4),
                 "chi_squared": round(chi_squared, 4),
@@ -78,8 +109,15 @@ def fit_data(x, y, degree, force_zero):
             r = np.sqrt(r2)
             rmse = np.sqrt(np.mean((y - y_pred) ** 2))
             residual_std = np.std(y - y_pred)
-            chi_squared = np.sum(((y - y_pred) ** 2) / y_pred)
+            # 卡方计算，避免除零错误
+            # 当 y_pred 为 0 时，跳过该项或使用小的替代值
+            y_pred_safe = np.where(np.abs(y_pred) < 1e-10, np.nan, y_pred)
+            chi_squared_terms = ((y - y_pred) ** 2) / y_pred_safe
+            chi_squared = np.nansum(chi_squared_terms)  # 忽略 NaN 值
 
+            # 使用 statsmodels 计算置信区间
+            confidence_95 = calculate_confidence_intervals(x, y, degree, force_zero=True)
+            
             result = {
                 "degree": degree,
                 "R2": round(calc_r2(y, y_pred), 4),
@@ -91,6 +129,7 @@ def fit_data(x, y, degree, force_zero):
                 "rmse": round(rmse, 4),
                 "residual_std": round(residual_std, 4),
                 "chi_squared": round(chi_squared, 4),
+                "confidence_95": confidence_95,
             }
             result['k0'] = 0.0
             for i in range(1, len(cleaned_reversed)):
@@ -102,14 +141,39 @@ def fit_data(x, y, degree, force_zero):
         coefficients = p.convert().coef  # 从低阶到高阶排列
         y_pred = p(x)
         cleaned = handle_small_coefficients(coefficients)
+        
+        # 计算统计指标
+        r2 = calc_r2(y, y_pred)
+        r = np.sqrt(r2)
+        rmse = np.sqrt(np.mean((y - y_pred) ** 2))
+        residual_std = np.std(y - y_pred)
+        
+        # 卡方计算，避免除零错误
+        y_pred_safe = np.where(np.abs(y_pred) < 1e-10, np.nan, y_pred)
+        chi_squared_terms = ((y - y_pred) ** 2) / y_pred_safe
+        chi_squared = np.nansum(chi_squared_terms)  # 忽略 NaN 值
+        
+        # 使用 statsmodels 计算置信区间
+        confidence_95 = calculate_confidence_intervals(x, y, degree, force_zero=False)
+        
         result = {
             "degree": degree,
-            "R2": round(calc_r2(y, y_pred), 4),
-            "R": round(np.sqrt(calc_r2(y, y_pred)), 4),
+            "R2": round(r2, 4),
+            "R": round(r, 4),
             "coefficients": cleaned,
+            "equation": generate_equation(cleaned, force_zero=False),
+            "image_base64": plot_fit(x, y, y_pred),
+            "standard_error": round(rmse, 4),
+            "confidence_95": confidence_95,
+            "rmse": round(rmse, 4),
+            "residual_std": round(residual_std, 4),
+            "chi_squared": round(chi_squared, 4),
         }
+        
+        # 添加各项系数
         for i, c in enumerate(cleaned):
             result[f'k{i}'] = c
+            
         return result
 
 def calc_r2(y_true, y_pred):

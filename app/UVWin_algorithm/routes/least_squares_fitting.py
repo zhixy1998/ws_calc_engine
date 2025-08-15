@@ -3,6 +3,7 @@
 """
 import sys
 import numpy as np
+import json
 from fastapi import APIRouter
 from typing import Optional, List
 from pydantic import BaseModel, Field
@@ -10,6 +11,15 @@ from pydantic import BaseModel, Field
 from exceptions.error import ErrorCode
 from exceptions.command_exception import APIException
 from utils.utils_least_squares_fitting import fit_data
+
+def validate_json_serializable(data):
+    """检查数据是否可以JSON序列化"""
+    try:
+        # 使用 allow_nan=False 来禁止 inf 和 nan 值
+        json.dumps(data, allow_nan=False)
+        return True
+    except (ValueError, TypeError):
+        return False
 
 router = APIRouter()
 
@@ -79,8 +89,13 @@ def least_squares_fitting(
     try:
         coefficients = fit_data(x, y, data.degree, data.force_zero)
     except Exception as e:
-        print(e)
         raise APIException(ErrorCode.OPERATION_FAILED)
 
+    # 检查结果是否可以JSON序列化
+    result = {**coefficients, "code": 200}
+    if not validate_json_serializable(result):
+        raise APIException(ErrorCode.IMPOSSIBLE_FITTING)
+
+    
     # 输出拟合结果为JSON格式
-    return {**coefficients, "code": 200}
+    return result

@@ -1,12 +1,13 @@
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import numpy as np
 from scipy.signal import find_peaks, peak_widths, savgol_filter, argrelmax
 
 from exceptions.error import ErrorCode
 from exceptions.command_exception import APIException
+from utils.utils_data_format import convert_scientific_notation
 
 router = APIRouter()
 
@@ -25,13 +26,13 @@ class OutSchema(BaseModel):
 
     # 谷数据
     valley_x: List[float] = Field(..., description="谷值对应的 x 坐标")
-    valley_y: List[float] = Field(..., description="谷值对应的 y 值")
+    valley_y: List[Union[float, str]] = Field(..., description="谷值对应的 y 值")
     num_valleys: int = Field(..., description="检测到的谷数量")
     valley_indices: List[int] = Field(..., description="谷值在原始数组中的索引位置")
     valley_depths: Optional[List[float]] = Field(None, description="谷深度") # 对应半峰宽，可以是半谷宽或谷深度
     valley_widths: Optional[List[float]] = Field(None, description="半谷宽") # 对应半峰宽
 
-    smoothed_y: Optional[List[float]] = Field(None, description="平滑后的Y值")
+    smoothed_y: Optional[List[Union[float, str]]] = Field(None, description="平滑后的Y值")
     differentiated_y: Optional[List[float]] = Field(None, description="微分后的Y值")
 
 
@@ -143,11 +144,14 @@ def find_valley_post(data: PeakRequest):
     valley_widths_at_half = [round(i, round_num) for i in valley_widths_results[0].tolist()]
 
     if round_num:
-        valley_y = [round(i, round_num) for i in y_smooth[valleys].tolist()] # 谷的y值是原始平滑后的y值
+        valley_y_raw = y_smooth[valleys].tolist() # 谷的y值是原始平滑后的y值
+        valley_y_converted = convert_scientific_notation(valley_y_raw)
+        valley_y = [round(i, round_num) for i in valley_y_converted]
         smoothed_y = [round(i, round_num) for i in y_smooth.tolist()]  # 如果需要可返回
         differentiated_y = [round(i, round_num) for i in np.gradient(y_smooth).tolist()]  # 如果需要可返回
     else:
-        valley_y = y_smooth[valleys].tolist()
+        valley_y_raw = y_smooth[valleys].tolist()
+        valley_y = convert_scientific_notation(valley_y_raw)
         smoothed_y = y_smooth.tolist()
         differentiated_y = np.gradient(y_smooth).tolist()
 
@@ -163,6 +167,6 @@ def find_valley_post(data: PeakRequest):
         "valley_depths": valley_depths,
         "valley_widths": valley_widths_at_half,
 
-        "smoothed_y": smoothed_y,
+        "smoothed_y": convert_scientific_notation(smoothed_y),
         "differentiated_y": differentiated_y
     }
