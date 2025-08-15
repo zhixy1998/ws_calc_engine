@@ -7,9 +7,9 @@ def convert_scientific_notation(values):
     """将科学记数法转换为普通小数格式"""
     converted = []
     for val in values:
+        val_str = str(val)
         if isinstance(val, (int, float)):
             # 将数值转换为字符串，检查是否包含科学记数法标记
-            val_str = str(val)
             if 'e' in val_str.lower():
                 # 如果是科学记数法，用 Decimal 转换成字符串返回
                 try:
@@ -20,9 +20,9 @@ def convert_scientific_notation(values):
                         decimal_str = decimal_str.rstrip('0').rstrip('.')
                     converted.append(decimal_str)
                 except:
-                    converted.append(val)
+                    converted.append(val_str)
             else:
-                converted.append(val)
+                converted.append(val_str)
         else:
-            converted.append(val)
+            converted.append(val_str)
     return converted
