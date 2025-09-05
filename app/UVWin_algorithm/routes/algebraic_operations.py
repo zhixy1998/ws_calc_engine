@@ -51,9 +51,9 @@ def algebraic_operations(data: InputSchema):
     print(f"公式中的变量: {formula_variables}")
     
     # 检查所有提供的变量是否在公式中存在
-    for v in independent_variable_string_list:
-        if v not in formula_variables:
-            raise APIException(ErrorCode.VARIABLE_NOT_IN_FORMULA)
+    # for v in independent_variable_string_list:
+    #     if v not in formula_variables:
+    #         raise APIException(ErrorCode.VARIABLE_NOT_IN_FORMULA)
 
     # 检查变量值是否为数字
     for v in independent_variable_value_list:
@@ -196,14 +196,15 @@ def extract_variables_from_sympy_expr(expr):
 
 def substitute_and_evaluate(expr, variable_dict):
     """
-    使用sympy进行变量替换和计算
+    使用sympy进行变量替换和计算，保留合理的小数精度
     """
     try:
         # 创建sympy符号
         sympy_subs = {}
         for var_name, var_value in variable_dict.items():
             symbol = sp.Symbol(var_name)
-            sympy_subs[symbol] = float(var_value)
+            # 使用 Decimal 来保持精度
+            sympy_subs[symbol] = sp.Float(var_value)
 
         print(f"变量替换: {sympy_subs}")
 
@@ -211,11 +212,14 @@ def substitute_and_evaluate(expr, variable_dict):
         substituted_expr = expr.subs(sympy_subs)
         print(f"替换后表达式: {substituted_expr}")
 
-        # 计算结果
-        result = float(substituted_expr.evalf())
-        print(f"计算结果: {result}")
+        # 计算结果并使用 N 函数控制精度
+        # 这里使用 15 位小数精度，可以根据需要调整
+        result = float(sp.N(substituted_expr, 15))
+        # print(f"计算结果: {result}")
 
-        return result
+        # 四舍五入到合理的小数位
+        # 这里使用 10 位小数，可以根据需要调整
+        return round(result, 10)
     except Exception as e:
         print(f"计算失败: {e}")
         raise APIException(ErrorCode.OPERATION_FAILED)
