@@ -157,7 +157,7 @@ def find_peaks_post(data: PeakRequest):
         smoothed_y = y_smooth.tolist()
         differentiated_y = np.gradient(y_smooth).tolist()
     print("peak_y", peak_y)
-    return {
+    return_data = {
         "code": 0,
         "message": "Success",
 
@@ -172,3 +172,5 @@ def find_peaks_post(data: PeakRequest):
         "smoothed_y": convert_scientific_notation(smoothed_y),
         "differentiated_y": differentiated_y
     }
+    # print("return_data", return_data)
+    return return_data

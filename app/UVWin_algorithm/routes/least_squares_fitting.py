@@ -12,6 +12,17 @@ from exceptions.error import ErrorCode
 from exceptions.command_exception import APIException
 from utils.utils_least_squares_fitting import fit_data
 
+def clean_nan_values(obj):
+    """递归处理数据中的 NaN 和 Infinity 值，将其转换为 None"""
+    if isinstance(obj, dict):
+        return {k: clean_nan_values(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_nan_values(item) for item in obj]
+    elif isinstance(obj, float) and (np.isnan(obj) or np.isinf(obj)):
+        return None
+    else:
+        return obj
+
 def validate_json_serializable(data):
     """检查数据是否可以JSON序列化"""
     try:
@@ -20,6 +31,7 @@ def validate_json_serializable(data):
         return True
     except (ValueError, TypeError):
         return False
+
 
 router = APIRouter()
 
@@ -32,8 +44,8 @@ class InputSchema(BaseModel):
 class OutPutSchema(BaseModel):
     code: int = Field(..., description="状态码")
     degree: int = Field(..., description="拟合的多项式次数")
-    R: float = Field(..., description="R值 （标准差, 代表拟合准确率）")
-    R2: float = Field(..., description="R2值 （决定系数, 代表拟合准确率）")
+    R: Optional[float] = Field(None, description="R值 （标准差, 代表拟合准确率）")
+    R2: Optional[float] = Field(None, description="R2值 （决定系数, 代表拟合准确率）")
     k0: Optional[float] = Field(None, description="常数项")
     k1: Optional[float] = Field(None, description="一次项")
     k2: Optional[float] = Field(None, description="二次项")
@@ -91,11 +103,13 @@ def least_squares_fitting(
     except Exception as e:
         raise APIException(ErrorCode.OPERATION_FAILED)
 
-    # 检查结果是否可以JSON序列化
+    # 先清理 NaN 值，然后检查结果是否可以JSON序列化
     result = {**coefficients, "code": 200}
-    if not validate_json_serializable(result):
-        raise APIException(ErrorCode.IMPOSSIBLE_FITTING)
+    cleaned_result = clean_nan_values(result)
+    
+    # if not validate_json_serializable(cleaned_result):
+    #     raise APIException(ErrorCode.IMPOSSIBLE_FITTING)
 
     
     # 输出拟合结果为JSON格式
-    return result
+    return cleaned_result
