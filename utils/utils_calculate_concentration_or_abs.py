@@ -18,10 +18,10 @@ def fit_data(coeffs, value, mode):
         coeffs_copy = coeffs.copy()
         coeffs_copy[-1] -= value  # 多项式减去 y
         roots = np.roots(coeffs_copy)
-        # 找所有正实根
-        candidates = [r.real for r in roots if np.isreal(r) and r.real >= 0]
+        # 找所有实根（包括负值）
+        candidates = [r.real for r in roots if np.isreal(r)]
         if not candidates:
-            raise ValueError("没有正实数根，无法计算浓度")
+            raise ValueError("没有实数根，无法计算浓度")
         # 选出最接近 value 的那个解
         best_x = min(candidates, key=lambda x: abs(np.polyval(coeffs, x) - value))
         return round(best_x, 4)
