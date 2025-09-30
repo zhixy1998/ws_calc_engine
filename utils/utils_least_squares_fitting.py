@@ -82,13 +82,13 @@ def fit_data(x, y, degree, force_zero):
                 "k1": k1,
                 "k0": 0.0,
                 "coefficients": [0.0, k1],
-                "equation": f"y = {round(k1, 4)}x",
+                "equation": f"y = {k1}x",
                 "image_base64": plot_fit(x, y, y_pred),
-                "standard_error": round(rmse, 4),
+                "standard_error": rmse,
                 "confidence_95": confidence_95,
-                "rmse": round(rmse, 4),
-                "residual_std": round(residual_std, 4),
-                "chi_squared": round(chi_squared, 4),
+                "rmse": rmse,
+                "residual_std": residual_std,
+                "chi_squared": chi_squared,
             }
 
         elif degree in [2, 3, 4]:
@@ -158,16 +158,16 @@ def fit_data(x, y, degree, force_zero):
         
         result = {
             "degree": degree,
-            "R2": round(r2, 4),
-            "R": round(r, 4),
+            "R2": r2,
+            "R": r,
             "coefficients": cleaned,
             "equation": generate_equation(cleaned, force_zero=False),
             "image_base64": plot_fit(x, y, y_pred),
-            "standard_error": round(rmse, 4),
+            "standard_error": rmse,
             "confidence_95": confidence_95,
-            "rmse": round(rmse, 4),
-            "residual_std": round(residual_std, 4),
-            "chi_squared": round(chi_squared, 4),
+            "rmse": rmse,
+            "residual_std": residual_std,
+            "chi_squared": chi_squared,
         }
         
         # 添加各项系数
@@ -189,7 +189,7 @@ def generate_equation(coefficients, force_zero=0):
         if force_zero and i == 0:
             continue  # 强制过零点，跳过常数项
         
-        coef_val = round(float(coef), 4)
+        coef_val = float(coef)
         if coef_val == 0:
             continue
         if i == 0:
