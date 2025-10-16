@@ -33,6 +33,7 @@ class SpectrumTransformResponse(BaseModel):
 def spectrum_transform(data: SpectrumTransformRequest):
     try:
         y = np.array([float(val) for val in data.y_data])
+        # print(y)
         if data.transform_type == 0:
             result_y = (10 ** (-y)) * 100
         elif data.transform_type == 1:

@@ -10,6 +10,7 @@ from . import smoothed
 from . import differentiated
 from . import get_valley
 from . import get_peaks_and_valleys
+from . import excel_smooth_plot
 
 router = APIRouter()
 
@@ -25,3 +26,4 @@ router.include_router(spectrum_transform.router, prefix='/spectrum_transform', t
 router.include_router(detect_step_skipe.router, prefix='/detect_step_skipe', tags=['消除台阶或者倒刺'])
 router.include_router(smoothed.router, prefix='/smoothed', tags=['平滑'])
 router.include_router(differentiated.router, prefix='/differentiated', tags=['微分'])
+router.include_router(excel_smooth_plot.router, prefix='/excel_smooth_plot', tags=['Excel平滑并绘制图表'])
