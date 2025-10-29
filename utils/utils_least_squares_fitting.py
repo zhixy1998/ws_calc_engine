@@ -183,22 +183,32 @@ def calc_r2(y_true, y_pred):
     return 1 - (ss_res / ss_tot)
 
 def generate_equation(coefficients, force_zero=0):
-    """生成方程字符串"""
+    """生成方程字符串，特殊处理全零情况"""
     terms = []
+    has_non_zero = False
+
     for i, coef in enumerate(coefficients):
+        # 强制过零点，跳过常数项（k0）
         if force_zero and i == 0:
-            continue  # 强制过零点，跳过常数项
-        
-        coef_val = float(coef)
-        if coef_val == 0:
             continue
+
+        coef_val = float(coef)
+        if abs(coef_val) < 1e-12:  # 使用容差判断，避免浮点误差
+            continue
+
+        has_non_zero = True
         if i == 0:
-            terms.append(f"{coef_val}")
+            terms.append(f"{coef_val:.10g}".rstrip('0').rstrip('.') if '.' in f"{coef_val:.10g}" else f"{coef_val:.10g}")
         elif i == 1:
-            terms.append(f"{coef_val}x")
+            terms.append(f"{coef_val:.10g}x".rstrip('0').rstrip('.') if '.' in f"{coef_val:.10g}" else f"{coef_val:.10g}x")
         else:
-            terms.append(f"{coef_val}x^{i}")
-    return "y = " + " + ".join(terms)
+            terms.append(f"{coef_val:.10g}x^{i}".rstrip('0').rstrip('.') if '.' in f"{coef_val:.10g}" else f"{coef_val:.10g}x^{i}")
+
+    # 关键修复：如果所有系数都是 0，返回 "y = 0"
+    if not has_non_zero and not (force_zero and len(coefficients) > 0):
+        return "y = 0"
+
+    return "y = " + " + ".join(terms) if terms else "y = 0"
 
 def plot_fit(x, y, y_pred):
     """绘制拟合图像并返回 base64 编码"""
