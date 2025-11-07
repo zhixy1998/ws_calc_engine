@@ -37,64 +37,6 @@ class PeakResponse(BaseModel):
     smoothed_y: Optional[List[Union[float, str]]] = Field(None, description="平滑后的Y值")
     differentiated_y: Optional[List[float]] = Field(None, description="微分后的Y值")
 
-
-def calculate_peak_valley_differences(y_data, peak_indices):
-    """
-    计算每个峰与其相邻谷的峰谷差
-    
-    Args:
-        y_data: 平滑后的y值数组
-        peak_indices: 峰的索引数组
-    
-    Returns:
-        peak_valley_diffs: 每个峰的峰谷差列表
-    """
-    if len(peak_indices) == 0:
-        return []
-    
-    # 找到所有局部最小值（谷）
-    valleys = argrelmin(y_data, order=1)[0]
-    
-    # 如果没有找到谷，使用数组边界作为谷
-    if len(valleys) == 0:
-        valleys = np.array([0, len(y_data) - 1])
-    else:
-        # 确保边界也被考虑为潜在的谷
-        valleys = np.concatenate([[0], valleys, [len(y_data) - 1]])
-        valleys = np.unique(valleys)
-    
-    peak_valley_diffs = []
-    
-    for peak_idx in peak_indices:
-        peak_value = y_data[peak_idx]
-        
-        # 找到峰左侧最近的谷
-        left_valleys = valleys[valleys < peak_idx]
-        if len(left_valleys) > 0:
-            left_valley_idx = left_valleys[-1]  # 最近的左侧谷
-            left_valley_value = y_data[left_valley_idx]
-        else:
-            left_valley_value = float('inf')  # 没有左侧谷
-        
-        # 找到峰右侧最近的谷
-        right_valleys = valleys[valleys > peak_idx]
-        if len(right_valleys) > 0:
-            right_valley_idx = right_valleys[0]  # 最近的右侧谷
-            right_valley_value = y_data[right_valley_idx]
-        else:
-            right_valley_value = float('inf')  # 没有右侧谷
-        
-        # 计算峰谷差：峰值减去相邻的最低谷值
-        adjacent_valley_value = min(left_valley_value, right_valley_value)
-        if adjacent_valley_value == float('inf'):
-            # 如果没有相邻谷，使用全局最小值
-            adjacent_valley_value = np.min(y_data)
-        
-        peak_valley_diff = peak_value - adjacent_valley_value
-        peak_valley_diffs.append(peak_valley_diff)
-    
-    return peak_valley_diffs
-
 @router.post("", response_model=PeakResponse)
 def find_peaks_post(data: PeakRequest):
     x = np.array(data.x_data)
@@ -111,24 +53,12 @@ def find_peaks_post(data: PeakRequest):
         y_smooth = savgol_filter(y, 5, 3)  # window=5, polyorder=3
     else:
         y_smooth = y.copy()
-
-    # 首先找到所有可能的峰（不使用height过滤）
-    all_peaks, properties = find_peaks(y_smooth, distance=data.distance)
     
-    # 如果指定了height参数，使用峰谷差进行过滤
-    if data.height is not None and len(all_peaks) > 0:
-        # 计算每个峰的峰谷差
-        peak_valley_diffs = calculate_peak_valley_differences(y_smooth, all_peaks)
-        
-        # 计算全局峰谷差范围作为参考
-        global_range = np.max(y_smooth) - np.min(y_smooth)
-        threshold = global_range * data.height
-        
-        # 根据峰谷差过滤峰
-        valid_peak_mask = np.array(peak_valley_diffs) >= threshold
-        peaks = all_peaks[valid_peak_mask]
-    else:
-        peaks = all_peaks
+    global_range = np.max(y_smooth) - np.min(y_smooth)
+    prominence_threshold = global_range * data.height if data.height is not None else None
+    
+    # 使用 prominence 过滤峰（突出度阈值）
+    peaks, properties = find_peaks(y_smooth, distance=data.distance, prominence=prominence_threshold)
 
     # 计算半峰宽
     results_half = peak_widths(y_smooth, peaks, rel_height=0.5)
