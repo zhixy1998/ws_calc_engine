@@ -20,6 +20,10 @@ class Config:
     @property
     def log_level(self):
         return self.config.get('env', 'algorithm_log_level')
+    
+    @property
+    def calc_worker(self):
+        return int(self.config.get('env', 'calc_worker'))
 
     # 添加更多 getter 方法...
 
