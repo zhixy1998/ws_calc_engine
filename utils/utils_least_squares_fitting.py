@@ -1,5 +1,6 @@
 import io
 import base64
+from decimal import Decimal
 
 import matplotlib
 matplotlib.use('Agg')
@@ -7,6 +8,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from numpy.polynomial import Polynomial
 import statsmodels.api as sm
+from utils.utils_data_format import convert_scientific_notation
+
 
 def calculate_confidence_intervals(x, y, degree, force_zero=False, alpha=0.05):
     """使用 statsmodels 计算置信区间"""
@@ -31,7 +34,7 @@ def calculate_confidence_intervals(x, y, degree, force_zero=False, alpha=0.05):
         conf_int = model.conf_int(alpha=alpha)  # alpha=0.05 表示95%置信区间
         
         # 转换为列表格式，并四舍五入到合理精度
-        conf_int_rounded = [[round(interval[0], 6), round(interval[1], 6)] for interval in conf_int.tolist()]
+        conf_int_rounded = [[format_decimal_string(round(interval[0], 6)), format_decimal_string(round(interval[1], 6))] for interval in conf_int.tolist()]
         return conf_int_rounded
         
     except Exception as e:
@@ -46,10 +49,7 @@ def handle_small_coefficients(coefficients):
         # print(coef)
         if abs(coef) >= 1e-15:
             round_value = round(coef, 8)
-            if round_value.is_integer():
-                l.append(str(int(round_value)))
-            else:
-                l.append(round_value)
+            l.append(format_decimal_string(round_value))
         else:
             l.append('0')
     return l
@@ -61,7 +61,7 @@ def fit_data(x, y, degree, force_zero):
     if force_zero:
         if degree == 1:
             # 一阶，强制过零点
-            k1 = np.sum(x * y) / np.sum(x ** 2)
+            k1 = format_decimal_string(np.sum(x * y) / np.sum(x ** 2))
             y_pred = k1 * x
             r2 = calc_r2(y, y_pred)
             r = np.sqrt(r2)
@@ -134,7 +134,6 @@ def fit_data(x, y, degree, force_zero):
             result['k0'] = 0.0
             for i in range(1, len(cleaned_reversed)):
                 result[f'k{i}'] = cleaned_reversed[i]
-            return result
     else:
         # 不强制过零点，直接 polyfit
         p = Polynomial.fit(x, y, degree)
@@ -174,7 +173,9 @@ def fit_data(x, y, degree, force_zero):
         for i, c in enumerate(cleaned):
             result[f'k{i}'] = c
             
-        return result
+    for k, v in result.items():
+        result[k] = format_decimal_string(v)
+    return result
 
 def calc_r2(y_true, y_pred):
     """计算决定系数 R²"""
@@ -182,8 +183,42 @@ def calc_r2(y_true, y_pred):
     ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
     return 1 - (ss_res / ss_tot)
 
+def format_decimal_string(num):
+    """
+    将浮点数转换为格式化后的普通小数（非科学记数法）字符串。
+    如果遇到无法转换的非数字类型，则返回其字符串形式。
+    """
+    if not isinstance(num, (float, int)):
+        return num
+
+    try:
+        # 1. 使用 str() 转换浮点数，确保 Decimal 获得精确值
+        d = Decimal(str(num))
+        
+        # 2. .to_eng_string() 转换为工程字符串（非科学记数法）
+        s = d.to_eng_string()
+        
+        # 3. 清理：去除尾随零和单独的小数点
+        if '.' in s:
+            s = s.rstrip('0').rstrip('.')
+            
+        # 4. 处理 "0" 或 "-0"
+        if s in ["0", "-0"]:
+            return "0"
+            
+        return s
+        
+    except Exception:
+        # 异常捕获，避免 Decimal 无法处理的值导致程序崩溃
+        return num
+
 def generate_equation(coefficients, force_zero=0):
-    """生成方程字符串，特殊处理全零情况"""
+    """
+    生成方程字符串，并将系数格式化为普通小数形式。
+    :param coefficients: 系数列表 [k0, k1, k2, ...]
+    :param force_zero: 如果为 1，则常数项 k0 强制为 0 (拟合过零点)
+    :return: 方程字符串 (e.g., "y = 1.23 + 0.00045x")
+    """
     terms = []
     has_non_zero = False
 
@@ -192,23 +227,52 @@ def generate_equation(coefficients, force_zero=0):
         if force_zero and i == 0:
             continue
 
-        coef_val = float(coef)
-        if abs(coef_val) < 1e-12:  # 使用容差判断，避免浮点误差
+        coef_val = float(coef) # 确保系数是浮点数，便于进行数值比较
+        
+        # 使用容差判断，避免浮点误差
+        if abs(coef_val) < 1e-12:
             continue
 
         has_non_zero = True
+        
+        # 核心：使用新的格式化函数获取系数的字符串表示
+        coef_str = format_decimal_string(coef_val)
+        
+        # 确定系数项的符号 (仅用于添加 ' + ' 或 ' - ')
+        # 默认将所有项视为正项，后续再处理连接符号
+        
         if i == 0:
-            terms.append(f"{coef_val:.10g}".rstrip('0').rstrip('.') if '.' in f"{coef_val:.10g}" else f"{coef_val:.10g}")
+            # 常数项
+            term_str = coef_str
         elif i == 1:
-            terms.append(f"{coef_val:.10g}x".rstrip('0').rstrip('.') if '.' in f"{coef_val:.10g}" else f"{coef_val:.10g}x")
+            # 一次项 (x)
+            term_str = f"{coef_str}x"
         else:
-            terms.append(f"{coef_val:.10g}x^{i}".rstrip('0').rstrip('.') if '.' in f"{coef_val:.10g}" else f"{coef_val:.10g}x^{i}")
+            # 高次项 (x^i)
+            term_str = f"{coef_str}x^{i}"
+        
+        # 将带有符号的项添加到列表中
+        if coef_val < 0 and terms:
+            # 如果是负数且不是第一个项，用 ' - ' 连接，并使用系数的绝对值
+            # 注意：在 format_decimal_string 中已经处理了负号，这里不需要再取 abs
+            terms.append(f" - {term_str.lstrip('-')}")
+        elif coef_val < 0 and not terms:
+             # 如果是负数且是第一个项，直接添加
+             terms.append(term_str)
+        elif terms:
+            # 如果是正数且不是第一个项，用 ' + ' 连接
+            terms.append(f" + {term_str}")
+        else:
+            # 如果是正数且是第一个项，直接添加
+            terms.append(term_str)
 
-    # 关键修复：如果所有系数都是 0，返回 "y = 0"
-    if not has_non_zero and not (force_zero and len(coefficients) > 0):
+    # 如果所有系数都是 0，返回 "y = 0"
+    if not has_non_zero:
         return "y = 0"
 
-    return "y = " + " + ".join(terms) if terms else "y = 0"
+    # 将所有项连接起来
+    return "y = " + "".join(terms).lstrip(" + ").lstrip(" - ")
+
 
 def plot_fit(x, y, y_pred):
     """绘制拟合图像并返回 base64 编码"""
