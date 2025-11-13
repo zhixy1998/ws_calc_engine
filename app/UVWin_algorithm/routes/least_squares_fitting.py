@@ -44,39 +44,39 @@ class InputSchema(BaseModel):
 class OutPutSchema(BaseModel):
     code: int = Field(..., description="状态码")
     degree: int = Field(..., description="拟合的多项式次数")
-    R: Optional[float] = Field(None, description="R值 （标准差, 代表拟合准确率）")
-    R2: Optional[float] = Field(None, description="R2值 （决定系数, 代表拟合准确率）")
-    k0: Optional[float] = Field(None, description="常数项")
-    k1: Optional[float] = Field(None, description="一次项")
-    k2: Optional[float] = Field(None, description="二次项")
-    k3: Optional[float] = Field(None, description="三次项")
-    k4: Optional[float] = Field(None, description="四次项")
-    coefficients: Optional[List[float]] = Field(None, description="所有系数列表，顺序为 k0, k1, ..., kn")
+    R: Optional[str] = Field(None, description="R值 （标准差, 代表拟合准确率）")
+    R2: Optional[str] = Field(None, description="R2值 （决定系数, 代表拟合准确率）")
+    k0: Optional[str] = Field(None, description="常数项")
+    k1: Optional[str] = Field(None, description="一次项")
+    k2: Optional[str] = Field(None, description="二次项")
+    k3: Optional[str] = Field(None, description="三次项")
+    k4: Optional[str] = Field(None, description="四次项")
+    coefficients: Optional[List[str]] = Field(None, description="所有系数列表，顺序为 k0, k1, ..., kn")
     equation: Optional[str] = Field(
         None, description="拟合公式字符串，例如 y = 2.3x² + 1.2x + 4.5"
     )
     image_base64: Optional[str] = Field(
         None, description="拟合图像（Base64 编码，可用于前端显示）"
     )
-    standard_error: Optional[float] = Field(
+    standard_error: Optional[str] = Field(
         None, description="预测标准误差（S），表示拟合值对实际值的偏离程度"
     )
-    confidence_95: Optional[List[List[float]]] = Field(
+    confidence_95: Optional[List[List[str]]] = Field(
         None, description="95%置信区间（L），表示系数的统计置信区间"
     )
-    r2_0: Optional[float] = Field(
+    r2_0: Optional[str] = Field(
         None, description="相关系数（r2_0），用于强调 Pearson 相关性"
     )
-    r2_M: Optional[float] = Field(
+    r2_M: Optional[str] = Field(
         None, description="多变量相关系数（r2_M），与R2相同但强调多项式场景"
     )
-    rmse: Optional[float] = Field(
+    rmse: Optional[str] = Field(
         None, description="评估标准误差（D），与 standard_error 等价"
     )
-    residual_std: Optional[float] = Field(
+    residual_std: Optional[str] = Field(
         None, description="残差标准偏差（R），表示残差的离散程度"
     )
-    chi_squared: Optional[float] = Field(
+    chi_squared: Optional[str] = Field(
         None, description="卡方（C），拟合优度检验统计值，越小越好"
     )
 
