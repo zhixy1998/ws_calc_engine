@@ -50,7 +50,7 @@ def find_peaks_post(data: PeakRequest):
 
     # 先做平滑（可选）
     if data.smooth == 1:
-        y_smooth = savgol_filter(y, 5, 3)  # window=5, polyorder=3
+        y_smooth = y.copy()
     else:
         y_smooth = y.copy()
     
