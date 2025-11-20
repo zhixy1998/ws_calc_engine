@@ -221,13 +221,23 @@ def generate_equation(coefficients, force_zero=0):
     """
     terms = []
     has_non_zero = False
+    
+    # 辅助函数，将系数转换为带符号的字符串
+    def get_coef_str(value):
+        # 假设 format_decimal_string(abs(value)) 返回一个不带符号的字符串
+        # 且您希望系数的正负号由外部控制
+        
+        # 鉴于您的原代码中 coef_str = format_decimal_string(coef_val)
+        # 猜测 format_decimal_string 返回的是带符号的字符串，这里需要调整
+        # 假设 format_decimal_string(v) 返回 v 的精确格式化，包含负号
+        return format_decimal_string(value) 
 
     for i, coef in enumerate(coefficients):
         # 强制过零点，跳过常数项（k0）
         if force_zero and i == 0:
             continue
 
-        coef_val = float(coef) # 确保系数是浮点数，便于进行数值比较
+        coef_val = float(coef)
         
         # 使用容差判断，避免浮点误差
         if abs(coef_val) < 1e-12:
@@ -235,44 +245,49 @@ def generate_equation(coefficients, force_zero=0):
 
         has_non_zero = True
         
-        # 核心：使用新的格式化函数获取系数的字符串表示
-        coef_str = format_decimal_string(coef_val)
+        # 获取系数的绝对值字符串（不带符号，符号由后续连接逻辑控制）
+        # 这里需要假设 format_decimal_string(abs(coef_val)) 返回不带符号的字符串
+        # 如果 format_decimal_string 总是返回带符号的，则需要修改该函数或以下逻辑
         
-        # 确定系数项的符号 (仅用于添加 ' + ' 或 ' - ')
-        # 默认将所有项视为正项，后续再处理连接符号
-        
+        # 为了兼容您的原始逻辑，我们先使用带符号的 coef_str
+        # 然后在连接时，利用它的符号来决定使用 ' + ' 还是 ' - '
+        coef_str_full = format_decimal_string(coef_val) # 例如: "-3.89333333" 或 "2.9974"
+        coef_str_abs = coef_str_full.lstrip('-+') # 例如: "3.89333333" 或 "2.9974"
+
+        # 构造项字符串 (只包含系数的绝对值部分，如 "3.89333333" 或 "3.89333333x")
         if i == 0:
-            # 常数项
-            term_str = coef_str
+            term_body = coef_str_abs
         elif i == 1:
-            # 一次项 (x)
-            term_str = f"{coef_str}x"
+            term_body = f"{coef_str_abs}x"
         else:
-            # 高次项 (x^i)
-            term_str = f"{coef_str}x^{i}"
+            term_body = f"{coef_str_abs}x^{i}"
         
-        # 将带有符号的项添加到列表中
-        if coef_val < 0 and terms:
-            # 如果是负数且不是第一个项，用 ' - ' 连接，并使用系数的绝对值
-            # 注意：在 format_decimal_string 中已经处理了负号，这里不需要再取 abs
-            terms.append(f" - {term_str.lstrip('-')}")
-        elif coef_val < 0 and not terms:
-             # 如果是负数且是第一个项，直接添加
-             terms.append(term_str)
-        elif terms:
-            # 如果是正数且不是第一个项，用 ' + ' 连接
-            terms.append(f" + {term_str}")
+        
+        # --- 核心连接逻辑优化 ---
+        
+        is_negative = coef_val < 0
+        
+        if not terms:
+            # 第一项: 必须包含符号（如果是负数）
+            if is_negative:
+                terms.append("-" + term_body)
+            else:
+                terms.append(term_body)
         else:
-            # 如果是正数且是第一个项，直接添加
-            terms.append(term_str)
+            # 后续项: 使用 ' + ' 或 ' - ' 连接，并使用绝对值部分
+            if is_negative:
+                terms.append(f" - {term_body}")
+            else:
+                terms.append(f" + {term_body}")
+
 
     # 如果所有系数都是 0，返回 "y = 0"
     if not has_non_zero:
         return "y = 0"
 
-    # 将所有项连接起来
-    return "y = " + "".join(terms).lstrip(" + ").lstrip(" - ")
-
+    # 将所有项连接起来。由于第一项已经包含了符号（如果需要），无需lstrip('-')
+    # 也不需要 lstrip(' + ')，因为第一项前面没有 ' + '
+    return "y = " + "".join(terms)
 
 def plot_fit(x, y, y_pred):
     """绘制拟合图像并返回 base64 编码"""
