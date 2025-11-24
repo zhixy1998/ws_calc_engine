@@ -215,78 +215,75 @@ def format_decimal_string(num):
 def generate_equation(coefficients, force_zero=0):
     """
     生成方程字符串，并将系数格式化为普通小数形式。
-    :param coefficients: 系数列表 [k0, k1, k2, ...]
+    输出顺序调整为降幂排列 (e.g., y = ax^2 + bx + c)。
+    
+    :param coefficients: 系数列表 [k0, k1, k2, ...]，其中下标对应x的幂次
     :param force_zero: 如果为 1，则常数项 k0 强制为 0 (拟合过零点)
-    :return: 方程字符串 (e.g., "y = 1.23 + 0.00045x")
+    :return: 方程字符串 (e.g., "y = 1.2x + 0.5")
     """
     terms = []
     has_non_zero = False
     
-    # 辅助函数，将系数转换为带符号的字符串
-    def get_coef_str(value):
-        # 假设 format_decimal_string(abs(value)) 返回一个不带符号的字符串
-        # 且您希望系数的正负号由外部控制
-        
-        # 鉴于您的原代码中 coef_str = format_decimal_string(coef_val)
-        # 猜测 format_decimal_string 返回的是带符号的字符串，这里需要调整
-        # 假设 format_decimal_string(v) 返回 v 的精确格式化，包含负号
-        return format_decimal_string(value) 
+    # 获取总项数，用于倒序遍历
+    degree = len(coefficients) - 1
 
-    for i, coef in enumerate(coefficients):
-        # 强制过零点，跳过常数项（k0）
+    # --- 关键修改：倒序遍历 ---
+    # 从最高阶 (degree) 遍历到 0
+    for i in range(degree, -1, -1):
+        
+        # 获取对应幂次的系数
+        coef = coefficients[i]
+
+        # 1. 强制过零点逻辑：如果是常数项 (i==0) 且 force_zero 为真，跳过
         if force_zero and i == 0:
             continue
 
         coef_val = float(coef)
         
-        # 使用容差判断，避免浮点误差
+        # 2. 忽略极小值 (接近0的系数不显示)
         if abs(coef_val) < 1e-12:
             continue
 
         has_non_zero = True
         
-        # 获取系数的绝对值字符串（不带符号，符号由后续连接逻辑控制）
-        # 这里需要假设 format_decimal_string(abs(coef_val)) 返回不带符号的字符串
-        # 如果 format_decimal_string 总是返回带符号的，则需要修改该函数或以下逻辑
-        
-        # 为了兼容您的原始逻辑，我们先使用带符号的 coef_str
-        # 然后在连接时，利用它的符号来决定使用 ' + ' 还是 ' - '
-        coef_str_full = format_decimal_string(coef_val) # 例如: "-3.89333333" 或 "2.9974"
-        coef_str_abs = coef_str_full.lstrip('-+') # 例如: "3.89333333" 或 "2.9974"
+        # 3. 格式化数值字符串
+        # 假设外部有一个 format_decimal_string 函数
+        # 获取带符号的完整字符串，例如 "-3.89"
+        coef_str_full = format_decimal_string(coef_val) 
+        # 获取绝对值字符串，例如 "3.89"
+        coef_str_abs = coef_str_full.lstrip('-+')
 
-        # 构造项字符串 (只包含系数的绝对值部分，如 "3.89333333" 或 "3.89333333x")
+        # 4. 构造项的主体 (根据幂次 i 决定 x 的显示方式)
         if i == 0:
-            term_body = coef_str_abs
+            term_body = coef_str_abs           # 常数项: "3.89"
         elif i == 1:
-            term_body = f"{coef_str_abs}x"
+            term_body = f"{coef_str_abs}x"     # 一次项: "3.89x"
         else:
-            term_body = f"{coef_str_abs}x^{i}"
+            term_body = f"{coef_str_abs}x^{i}" # 高次项: "3.89x^2"
         
-        
-        # --- 核心连接逻辑优化 ---
-        
+        # 5. 连接逻辑 (处理正负号)
         is_negative = coef_val < 0
         
         if not terms:
-            # 第一项: 必须包含符号（如果是负数）
+            # 这是输出字符串的“第一项”（即最高阶项）
+            # 如果是负数，前面加负号；如果是正数，前面不加符号
             if is_negative:
                 terms.append("-" + term_body)
             else:
                 terms.append(term_body)
         else:
-            # 后续项: 使用 ' + ' 或 ' - ' 连接，并使用绝对值部分
+            # 后续项（中间的项或常数项）
+            # 需要用 " - " 或 " + " 与前一项连接
             if is_negative:
                 terms.append(f" - {term_body}")
             else:
                 terms.append(f" + {term_body}")
 
-
-    # 如果所有系数都是 0，返回 "y = 0"
+    # 如果所有系数都被跳过（全是0或强制过零），返回 "y = 0"
     if not has_non_zero:
         return "y = 0"
 
-    # 将所有项连接起来。由于第一项已经包含了符号（如果需要），无需lstrip('-')
-    # 也不需要 lstrip(' + ')，因为第一项前面没有 ' + '
+    # 拼接结果
     return "y = " + "".join(terms)
 
 def plot_fit(x, y, y_pred):
