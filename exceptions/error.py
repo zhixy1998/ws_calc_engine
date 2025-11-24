@@ -30,3 +30,5 @@ class ErrorCode(Enum):
     HEIGHT_MUST_BE_BETWEEN_0_AND_1 = Error(1008, zh="height 必须在 0 到 1 之间")
     X_Y_MUST_NUM = Error(1009, zh='x y 必须为数字')
     IMPOSSIBLE_FITTING = Error(1010, zh='数据无法进行指定的拟合，数学上不可行')
+    WINDOWS_MUST_ODD = Error(1018, zh='windows_length必须是奇数')
+    POLYORDER_MUST_LESS_THEN_WINDOWS_LENGTH = Error(1019, zh='polyorder 必须小于 windows_length')
