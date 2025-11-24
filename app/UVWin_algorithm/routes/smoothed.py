@@ -2,9 +2,9 @@ from typing import List, Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from scipy.signal import savgol_filter
+from scipy.signal import savgol_filter, medfilt
 
-from exceptions.error import ErrorCode
+from exceptions.error import Error, ErrorCode
 from exceptions.command_exception import APIException
 
 
@@ -21,6 +21,7 @@ class InputSchema(BaseModel):
 较低的值（如 1）会使拟合更简单，可能欠拟合数据。
 较高的值（如 4 或更高）可能对噪声更敏感，导致过拟合。
 必须小于 window_length（窗口长度）。""")
+    # strength_level: int = Field(...)
 
 class OutPutSchemaData(BaseModel):
     smoothed_y: Optional[List[float]] = Field(None, description="平滑后的Y值")
@@ -37,8 +38,16 @@ class OutPutSchema(BaseModel):
 def smoothed_differentiated(data: InputSchema):
     y = data.y_data
     round_num = data.round_num
-    y_smooth = savgol_filter(y, window_length=data.window_length, polyorder=data.polyorder)  # window=5, polyorder=3
+    window_length = data.window_length
+    polyorder = data.polyorder
+    if window_length %2 != 1:
+        raise APIException(ErrorCode.WINDOWS_MUST_ODD)
+    if polyorder >= window_length:
+        raise APIException(ErrorCode.POLYORDER_MUST_LESS_THEN_WINDOWS_LENGTH)
 
+    y_smooth = savgol_filter(y, window_length=window_length, polyorder=polyorder)  # window=5, polyorder=3
+
+    
 
     return {
         'code': 200,
@@ -47,3 +56,27 @@ def smoothed_differentiated(data: InputSchema):
             "smoothed_y": [round(i, round_num) for i in y_smooth.tolist()]
         }
     }
+
+
+def despike_spectroscopy(y_in, strength_level):
+    """
+    使用“中位数滤波”去除光谱尖刺 (如宇宙射线)
+    
+    :param y_in: 原始光谱 y 轴数据 (numpy array)
+    :param strength_level: “力度” (e.g., 1, 2, 3...)
+                         将被映射为窗口大小 (3, 5, 7...)
+    :return: 去除尖刺后的 y 轴数据 (numpy array)
+    """
+    
+    # 将“力度”映射为奇数的窗口大小
+    # 比如 力度 1 -> 窗口 3; 力度 2 -> 窗口 5
+    window_size = (strength_level * 2) + 1
+    
+    if window_size < 3:
+        window_size = 3 # 最小窗口必须为 3
+        
+    print(f"中位数滤波: 力度 {strength_level} -> 窗口大小 {window_size}")
+    
+    # kernel_size 就是窗口大小
+    y_out = medfilt(y_in, kernel_size=window_size)
+    return y_out
