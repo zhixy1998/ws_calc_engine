@@ -63,7 +63,7 @@ test_cases = [
     {
         "desc": "二次拟合 - 强制过零点",
         "params": {"x_data": "1,2,3,4,5", "y_data": "3,7,13,21,31", "degree": 2, "force_zero": 1},
-        "expected": {"degree": 2, "R2": 1.0, "R": 1.0, "coefficients": [1.0, 1.0, 1.0], "k0": 1.0, "k1": 1.0, "k2": 1.0}
+        "expected": {"degree": 2, "R2": 0.9996, "R": 0.9998, "coefficients": [0.0, 1.7173913, 0.89130435], "k0": 0.0, "k1": 1.7173913, "k2": 0.89130435}
     },
     {
         "desc": "三次拟合 - 不强制过零点",
@@ -83,7 +83,7 @@ test_cases = [
     {
         "desc": "四次拟合 - 强制过零点",
         "params": {"x_data": "1,2,3,4,5", "y_data": "30,130,330,650,1130", "degree": 4, "force_zero": 1},
-        "expected": {"degree": 4, "R2": 1.0, "R": 1.0, "coefficients": [30.0, -55.0, 59.1667, -5.0, 0.8333], "k0": 30.0, "k1": -55.0, "k2": 59.1667, "k3": -5.0, "k4": 0.8333}
+        "expected": {"degree": 4, "R2": 1.0, "R": 1.0, "coefficients": [0.0, -0.2191, 26.74, 2.66, 0.2058], "k0": 0.0, "k1": -0.2191, "k2": 26.74, "k3": 2.66, "k4": 0.2058}
     },
 ]
 
@@ -91,6 +91,7 @@ test_cases = [
 TOLERANCE = 0.01  # 误差容忍范围
 
 def assert_approx_equal(value, expected, key):
+    print('断言字段:', key)
     if isinstance(value, list) and isinstance(expected, list):
         if len(value) != len(expected):
             raise AssertionError(f"{key}: 长度不匹配，实际{len(value)} != 期望{len(expected)}")
@@ -113,16 +114,30 @@ async def test_run_all_case(async_client):
         }
         response = await async_client.post(BASE_URL,  json=post_json)
         data = response.json()
-        assert data['code'] == 0
+        assert data['code'] == 200
         print(f"\n=== {case['desc']} ===")
-        print("请求参数:", case["params"])
+        print("请求参数:", post_json)
+        data.pop('image_base64')
         print("返回结果:", data)
+
+        # 临时注释断言，只打印期望和实际
+        print("期望值:", case["expected"])
+        for key, expected_val in case["expected"].items():
+            actual_val = data.get(key)
+            if isinstance(actual_val, str):
+                actual_val = float(actual_val)
+            elif isinstance(actual_val, list):
+                actual_val = [float(x) if isinstance(x, str) else x for x in actual_val]
+            print(f"{key}: 期望 {expected_val}, 实际 {actual_val}")
 
         for key, expected_val in case["expected"].items():
             actual_val = data.get(key)
+            if isinstance(actual_val, str):
+                actual_val = float(actual_val)
+            elif isinstance(actual_val, list):
+                actual_val = [float(x) if isinstance(x, str) else x for x in actual_val]
+            
             assert_approx_equal(actual_val, expected_val, key)
-
-        print("✅ 断言通过")
 
 
 
