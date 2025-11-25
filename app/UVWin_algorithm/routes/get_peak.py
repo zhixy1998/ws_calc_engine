@@ -76,7 +76,7 @@ def find_peaks_post(data: PeakRequest):
     if round_num:
         peak_y_raw = y_smooth[peaks].tolist()
         peak_y_converted = convert_scientific_notation(peak_y_raw)
-        peak_y = [round(i, round_num) for i in peak_y_converted]
+        peak_y = [round(float(i), round_num) for i in peak_y_converted]
         peak_width_list = [round(i, round_num) for i in results_half[0].tolist()]  # 半峰宽对应x轴单位可以根据需求转换
         smoothed_y = [round(i, round_num) for i in y_smooth.tolist()]  # 如果需要可返回
         differentiated_y = [round(i, round_num) for i in np.gradient(y_smooth).tolist()]  # 如果需要可返回

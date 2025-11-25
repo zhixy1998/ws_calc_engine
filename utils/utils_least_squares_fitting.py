@@ -93,23 +93,19 @@ def fit_data(x, y, degree, force_zero):
         elif degree in [2, 3, 4]:
             # 高阶，强制过零点，构造 A 矩阵，不含 k0
             powers = [x ** d for d in range(degree, 0, -1)]
-            A = np.vstack(powers + [np.ones_like(x)]).T
+            A = np.vstack(powers).T  # 移除常数项
             coefficients = np.linalg.lstsq(A, y, rcond=None)[0]  # 高 -> 低
             y_pred = A @ coefficients
 
-            # p = Polynomial.fit(x, y, degree)
-            # coefficients = p.convert().coef  # 从低阶到高阶
-            # y_pred = p(x)
-
             cleaned = handle_small_coefficients(coefficients)
             cleaned_reversed = cleaned[::-1]  # 低 -> 高
+            full_coefficients = ['0.0'] + cleaned_reversed  # 强制补 k0=0.0
 
             r2 = calc_r2(y, y_pred)
             r = np.sqrt(r2)
             rmse = np.sqrt(np.mean((y - y_pred) ** 2))
             residual_std = np.std(y - y_pred)
             # 卡方计算，避免除零错误
-            # 当 y_pred 为 0 时，跳过该项或使用小的替代值
             y_pred_safe = np.where(np.abs(y_pred) < 1e-10, np.nan, y_pred)
             chi_squared_terms = ((y - y_pred) ** 2) / y_pred_safe
             chi_squared = np.nansum(chi_squared_terms)  # 忽略 NaN 值
@@ -121,8 +117,8 @@ def fit_data(x, y, degree, force_zero):
                 "degree": degree,
                 "R2": round(calc_r2(y, y_pred), 4),
                 "R": round(np.sqrt(calc_r2(y, y_pred)), 4),
-                "coefficients": cleaned_reversed,
-                "equation": generate_equation(cleaned_reversed, force_zero=force_zero),
+                "coefficients": full_coefficients,
+                "equation": generate_equation(full_coefficients, force_zero=force_zero),
                 "image_base64": plot_fit(x, y, y_pred),
                 "standard_error": round(rmse, 4),
                 "rmse": round(rmse, 4),
@@ -131,8 +127,8 @@ def fit_data(x, y, degree, force_zero):
                 "confidence_95": confidence_95,
             }
             result['k0'] = 0.0
-            for i in range(1, len(cleaned_reversed)):
-                result[f'k{i}'] = cleaned_reversed[i]
+            for i in range(1, len(full_coefficients)):
+                result[f'k{i}'] = full_coefficients[i]
     else:
         # 不强制过零点，直接 polyfit
         p = Polynomial.fit(x, y, degree)
