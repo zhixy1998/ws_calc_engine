@@ -8,7 +8,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from numpy.polynomial import Polynomial
 import statsmodels.api as sm
-from utils.utils_data_format import convert_scientific_notation
 
 
 def calculate_confidence_intervals(x, y, degree, force_zero=False, alpha=0.05):
@@ -61,7 +60,7 @@ def fit_data(x, y, degree, force_zero):
     if force_zero:
         if degree == 1:
             # 一阶，强制过零点
-            k1 = format_decimal_string(np.sum(x * y) / np.sum(x ** 2))
+            k1 = np.sum(x * y) / np.sum(x ** 2)
             y_pred = k1 * x
             r2 = calc_r2(y, y_pred)
             r = np.sqrt(r2)
@@ -75,13 +74,13 @@ def fit_data(x, y, degree, force_zero):
         
             # 使用 statsmodels 计算置信区间
             confidence_95 = calculate_confidence_intervals(x, y, degree, force_zero=True)
-            return {
+            result =  {
                 "degree": degree,
                 "R2": round(r2, 4),
                 "R": round(r, 4),
                 "k1": k1,
                 "k0": 0.0,
-                "coefficients": [0.0, k1],
+                "coefficients": [str(0.0), str(k1)],
                 "equation": f"y = {k1}x",
                 "image_base64": plot_fit(x, y, y_pred),
                 "standard_error": rmse,
