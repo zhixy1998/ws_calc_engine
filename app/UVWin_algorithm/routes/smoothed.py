@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from scipy.signal import savgol_filter, medfilt
 
+from utils.utils_data_format import get_max_decimal_places
 from exceptions.error import Error, ErrorCode
 from exceptions.command_exception import APIException
 
@@ -12,7 +13,7 @@ router = APIRouter()
 
 class InputSchema(BaseModel):
     y_data: List[float] = Field(..., description='y值')
-    round_num: int = Field(4, description='小数点后几位')
+    round_num: int = Field(None, description='小数点后几位')
     window_length: Optional[int] = Field(..., description='点数')
     polyorder: Optional[int] = Field(..., description="""系数 polyorder 是 Savitzky-Golay 滤波器（savgol_filter）中的一个参数，表示拟合多项式（polynomial）的阶数。具体来说：
 作用：它决定了用于局部多项式拟合的多项式的最高次幂。
@@ -24,7 +25,7 @@ class InputSchema(BaseModel):
     # strength_level: int = Field(...)
 
 class OutPutSchemaData(BaseModel):
-    smoothed_y: Optional[List[float]] = Field(None, description="平滑后的Y值")
+    smoothed_y: Optional[List[str]] = Field(None, description="平滑后的Y值")
 
 
 class OutPutSchema(BaseModel):
@@ -47,13 +48,14 @@ def smoothed_differentiated(data: InputSchema):
 
     y_smooth = savgol_filter(y, window_length=window_length, polyorder=polyorder)  # window=5, polyorder=3
 
-    
+    decimal_places = get_max_decimal_places(y)
 
+    smoothed_y_formatted = [f"{i:.{decimal_places}f}" for i in y_smooth.tolist()]
     return {
         'code': 200,
         'message': 'success',
         'data': {
-            "smoothed_y": [round(i, round_num) for i in y_smooth.tolist()]
+            "smoothed_y": smoothed_y_formatted
         }
     }
 
