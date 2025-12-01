@@ -1,6 +1,7 @@
 """
 数据格式化工具函数
 """
+from typing import List
 from decimal import Decimal
 
 def convert_scientific_notation(values):
@@ -26,3 +27,19 @@ def convert_scientific_notation(values):
         else:
             converted.append(val_str)
     return converted
+
+
+def get_max_decimal_places(y_data: List[float]) -> int:
+    """
+    检测 y_data 列表中所有浮点数的最大小数点位数。
+    例如：[1.23, 4.567] 返回 3（因为 4.567 有 3 位小数）。
+    如果都是整数，返回 0。
+    """
+    max_places = 0
+    for val in y_data:
+        # 将浮点数转换为字符串，去掉尾部零和小数点
+        str_val = f"{val:.10f}".rstrip('0').rstrip('.')
+        if '.' in str_val:
+            places = len(str_val.split('.')[1])
+            max_places = max(max_places, places)
+    return max_places
