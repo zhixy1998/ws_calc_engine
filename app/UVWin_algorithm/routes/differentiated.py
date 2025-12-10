@@ -50,9 +50,9 @@ def smoothed_differentiated(data: InputSchema):
         raise APIException(ErrorCode.WINDOWS_MUST_ODD)
     if polyorder >= window_length:
         raise APIException(ErrorCode.POLYORDER_MUST_LESS_THEN_WINDOWS_LENGTH)
-
-    differentiated_y = savgol_filter(y, window_length=data.window_length, polyorder=data.polyorder, deriv=data.deriv)  # window=5, polyorder=3
-
+    reversed_y = y[::-1]
+    differentiated_y = savgol_filter(reversed_y, window_length=data.window_length, polyorder=data.polyorder, deriv=data.deriv)  # window=5, polyorder=3
+    differentiated_y = differentiated_y[::-1]
     decimal_places = get_max_decimal_places(y)
 
     differentiated_round = [f"{i:.{decimal_places}f}" for i in differentiated_y.tolist()]
