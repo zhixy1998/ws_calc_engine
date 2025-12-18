@@ -17,8 +17,9 @@ class InputSchema(BaseModel):
     y_data: List[float] = Field(..., description="吸光度数据，例如：2,4,6,8,10")
     k: float = Field(3.0, description='门限倍数（仅用于倒刺检测）')
     process_type: int = Field(1, description="处理类型：1: 台阶, 2: 倒刺")
-    change_lamp_wavelength: Optional[float] = Field(None, description="换灯波长（仅台阶处理时需要，换灯后第一个点的波长）")
+    change_lamp_wavelength: Optional[float] = Field(None, description="换灯波长（跳变前的点）")
     wavelength_end: Optional[float] = Field(None, description="本次测量的结束波长（最低波长），用于判断是否最后一批")
+    change_filter_point_list: Optional[List[float]] = Field(None, description="换滤光片点列表（跳变前的点，按从长波长到低波长排序）")
     # smoothing_method: Optional[str] = Field("gaussian", description="平滑方法：'moving_average', 'gaussian', 'median'")
 
 class OutPutSchema(BaseModel):
@@ -34,11 +35,17 @@ async def process_data(
     print(f'debug 台阶和倒刺: process_type={data.process_type}, x={data.x_data}, y={data.y_data}')
     
     if data.process_type == 1:
-        # 台阶处理：使用换灯波长定位
+        # 台阶处理：将换灯点与滤光片换片点合并为统一的跳变前点列表
+        break_points = list(data.change_filter_point_list or [])
+        if data.change_lamp_wavelength is not None:
+            break_points.append(data.change_lamp_wavelength)
+        # 按从高到低波长排序，去重
+        break_points = sorted(set(break_points), reverse=True)
+        # 消除台阶
         result = process_step_removal(
             x_data=data.x_data,
             y_data=data.y_data,
-            change_lamp_wavelength=data.change_lamp_wavelength - 1,
+            break_points=break_points,
             wavelength_end=data.wavelength_end,
             cache=step_cache
         )
