@@ -33,5 +33,5 @@ def calculate_concentration_or_abs(
     """
     if input_data.mode not in (0, 1):
         raise APIException(ErrorCode.INVALID_MODE)
-    return OutPutSchema(code=0, value=fit_data(input_data.coeffs, input_data.value, input_data.mode))
+    return OutPutSchema(code=200, value=fit_data(input_data.coeffs, input_data.value, input_data.mode))
   

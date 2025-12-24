@@ -156,7 +156,7 @@ def find_valley_post(data: PeakRequest):
         differentiated_y = np.gradient(y_smooth).tolist()
 
     return_data =  {
-        "code": 0,
+        "code": 200,
         "message": "Success",
 
         # 谷数据

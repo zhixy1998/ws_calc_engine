@@ -1,0 +1,7 @@
+.customTable {
+  :global {
+    .ant-table-content {
+      height: calc(100vh - 100px);
+    }
+  }
+}

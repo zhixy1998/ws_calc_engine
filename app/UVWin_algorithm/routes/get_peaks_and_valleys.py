@@ -257,7 +257,7 @@ def find_peaks_and_valleys_post(data: PeaksAndValleysRequest):
         differentiated_y = np.gradient(y_smooth).tolist()
 
     return {
-        "code": 0,
+        "code": 200,
         "message": "Success",
 
         # 峰数据
