@@ -70,7 +70,7 @@ def algebraic_operations(data: InputSchema):
     # 使用sympy进行计算
     result = substitute_and_evaluate(expr, variable_dict)
     
-    return OutPutSchema(code=0, result=result)
+    return OutPutSchema(code=200, result=result)
 
 
 def is_latex_formula(formula_string):

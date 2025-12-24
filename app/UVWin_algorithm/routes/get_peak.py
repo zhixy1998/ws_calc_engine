@@ -88,7 +88,7 @@ def find_peaks_post(data: PeakRequest):
         differentiated_y = np.gradient(y_smooth).tolist()
     print("peak_y", peak_y)
     return_data = {
-        "code": 0,
+        "code": 200,
         "message": "Success",
 
         # 峰数据

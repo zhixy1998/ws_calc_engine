@@ -62,7 +62,7 @@ def spectrum_transform(data: SpectrumTransformRequest):
         raise APIException(ErrorCode.OPERATION_FAILED, str(e))
 
     return SpectrumTransformResponse(
-        code=0,
+        code=200,
         message="Success",
         result_y=[round(i, 4) for i in result_y.tolist()]
     )

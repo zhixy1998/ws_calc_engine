@@ -44,7 +44,7 @@ def spectrum_math(data: SpectrumMathRequest):
         raise APIException(ErrorCode.OPERATION_FAILED)
 
     return SpectrumMathResponse(
-        code=0,
+        code=200,
         message="Success",
         x_data=data.x_data,
         y_data=result_y

@@ -163,7 +163,7 @@ def process_step_removal(
         cache.clear()
     
     return {
-        'code': 0,
+        'code': 200,
         'smoothed_data': y_corrected.tolist(),
         'message': 'success'
     }
@@ -233,7 +233,7 @@ def process_spike_removal(
         except Exception as e:
             raise APIException(ErrorCode.OPERATION_FAILED)
     
-    return {'code': 0, 'smoothed_data': [round(v, 4) for v in y]}
+    return {'code': 200, 'smoothed_data': [round(v, 4) for v in y]}
 
 
 # ==================== 以下是原有的辅助函数，保持不变 ====================
