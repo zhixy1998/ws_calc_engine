@@ -1,21 +1,23 @@
-import pandas as pd
-from typing import List, Optional
-import matplotlib.pyplot as plt
+
+import io
 import matplotlib
+import pandas as pd
+from typing import Optional
+import matplotlib.pyplot as plt
+
+from pydantic import BaseModel, Field
+from scipy.signal import savgol_filter
+from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, UploadFile, File, Form
+
+from exceptions.error import ErrorCode
+from exceptions.command_exception import APIException
+
 matplotlib.use('Agg')  # Use non-interactive backend
 # 设置中文字体支持
 plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'SimHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
-import io
-import base64
 
-from fastapi import APIRouter, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
-from scipy.signal import savgol_filter
-
-from exceptions.error import ErrorCode
-from exceptions.command_exception import APIException
 
 
 router = APIRouter()
