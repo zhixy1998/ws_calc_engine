@@ -242,7 +242,7 @@ def predict_next_y_simple(y_values: List[float]) -> float:
 def process_targeted_spike_removal(
     x_data: List[float],
     y_data: List[float],
-    spike_points: List[int],
+    spike_points: List[float],
     wavelength_end: Optional[float],
     cache: SpikeCorrectionCache
 ) -> Dict[str, Any]:
@@ -252,17 +252,9 @@ def process_targeted_spike_removal(
     参数:
         x_data: 当前批次 x 数据
         y_data: 当前批次 y 数据
-        spike_points: 倒刺的大致 x 坐标列表，传入的是 x 坐标不是下标
+        spike_points: 倒刺的确切 x 坐标列表（不用做推断，传过来对应的点就是要抹平的点）
         wavelength_end: 本次测量的结束波长，用于判断是否最后一批
         cache: 倒刺缓存对象
-
-    处理逻辑:
-        1. 在目标点的左右两个波长范围内搜索，即 [target-2, target+2]
-        2. 逻辑1：两倍阈值不是 y 值的两倍，而是前序正常区间波动的两倍
-        3. 逻辑2：连续双刺支持 3 点形态和 4 点形态，并要求参与形态的每个点都超过两倍波动阈值
-        4. 若连续形态里有任一点不满足两倍阈值，则不按连续双刺处理，而是视为单独刺
-        5. 修复时只用倒刺之前的已知数据做外推平滑，不做简单平均
-        6. 保留上一批次尾部点，支持下一批次第一个点就是倒刺
     """
     try:
         x = [float(val) for val in x_data]
@@ -284,36 +276,31 @@ def process_targeted_spike_removal(
         is_last_batch = min(x) <= wavelength_end
 
     pending_spikes = _unique_keep_order(cache._data['pending_spikes'] + list(spike_points or []))
-    remaining_pending: List[int] = []
-    baseline_anchor_idx = 0
+    remaining_pending: List[float] = []
+
+    resolved_indices: List[int] = []
 
     for target_x in pending_spikes:
-        # 对每个目标 x，在当前批次和上一批次尾部拼接后的窗口里找刺。
-        spike_indices, end_anchor_idx, need_more_data = _resolve_target_spike_segment(
-            x_values=combined_x,
-            original_y=combined_y,
-            corrected_y=corrected_y,
-            target_x=float(target_x),
-            baseline_anchor_idx=baseline_anchor_idx,
-            is_last_batch=is_last_batch,
-        )
-        if need_more_data:
-            remaining_pending.append(target_x)
-            continue
-
-        if not spike_indices:
-            if not _has_reached_target_window(combined_x, float(target_x)):
+        # 直接拿去匹配
+        found_idx = None
+        for i, xv in enumerate(combined_x):
+            if abs(xv - float(target_x)) < 1e-6:
+                found_idx = i
+                break
+        
+        if found_idx is None:
+            if not combined_x or min(combined_x) > float(target_x) + 1e-6:
                 remaining_pending.append(target_x)
             continue
+            
+        resolved_indices.append(found_idx)
 
-        spike_indices = sorted(set(idx for idx in spike_indices if idx >= prefix_len))
-        for segment_indices in _group_nearby_indices(spike_indices):
-            # 同一小段里的刺一起修，避免两个刺之间保留一个点后又形成新的凸起/凹陷。
-            segment_values = _smooth_spike_segment(combined_x, combined_y, corrected_y, segment_indices)
-            for idx, value in zip(segment_indices, segment_values):
-                corrected_y[idx] = value
-
-        baseline_anchor_idx = min(end_anchor_idx, len(combined_x) - 1)
+    valid_indices = sorted(set(idx for idx in resolved_indices if idx >= prefix_len))
+    
+    for segment_indices in _group_nearby_indices(valid_indices, max_gap=1):
+        segment_values = _smooth_spike_segment(combined_x, combined_y, corrected_y, segment_indices)
+        for idx, value in zip(segment_indices, segment_values):
+            corrected_y[idx] = value
 
     current_y = corrected_y[prefix_len:]
     cache._data['pending_spikes'] = remaining_pending
@@ -321,8 +308,7 @@ def process_targeted_spike_removal(
 
     if is_last_batch:
         cache.clear()
-    # 清理浮点尾差，避免出现 990.0749999999953 这种展示值。
-    current_y = [round(float(i), 10) for i in current_y]
+        
     return {
         'code': 200,
         'smoothed_data': current_y,
@@ -341,8 +327,8 @@ def _unique_keep_order(values: List[Any]) -> List[Any]:
     return result
 
 
-def _group_nearby_indices(indices: List[int], max_gap: int = 2) -> List[List[int]]:
-    # 相距很近的刺按一个连续小段处理，例如 [560, 558] 会扩成 [560, 559, 558]。
+def _group_nearby_indices(indices: List[int], max_gap: int = 1) -> List[List[int]]:
+    # 相距很近的刺按一个连续小段处理
     if not indices:
         return []
     groups = [[indices[0]]]
@@ -354,209 +340,7 @@ def _group_nearby_indices(indices: List[int], max_gap: int = 2) -> List[List[int
     return [list(range(group[0], group[-1] + 1)) for group in groups]
 
 
-def _has_reached_target_window(x_values: List[float], target_x: float) -> bool:
-    if not x_values:
-        return False
-    return min(x_values) <= target_x + 2 and max(x_values) >= target_x - 2
 
-
-def _resolve_target_spike_segment(
-    x_values: List[float],
-    original_y: List[float],
-    corrected_y: List[float],
-    target_x: float,
-    baseline_anchor_idx: int,
-    is_last_batch: bool,
-) -> Tuple[List[int], int, bool]:
-    """
-    基于目标点附近窗口，解析单刺或连续双刺区间。
-
-    返回:
-        spike_indices: 需要修复的倒刺点索引列表
-        end_anchor_idx: 当前倒刺结束后的正常锚点索引，供后续目标计算波动阈值
-        need_more_data: 是否需要等下一批次补足判断数据
-    """
-    window_indices = [
-        idx for idx, xv in enumerate(x_values)
-        if target_x - 2 <= xv <= target_x + 2 and idx > 0
-    ]
-
-    if not window_indices:
-        return [], baseline_anchor_idx, False
-
-    ranked_indices = sorted(window_indices, key=lambda idx: (abs(x_values[idx] - target_x), idx))
-    pending_due_to_boundary = False
-    resolved_indices: List[int] = []
-    consumed_indices = set()
-    # working_corrected_y 用来在同一窗口内边修边判断，避免前一个刺影响后一个刺的判断。
-    working_corrected_y = list(corrected_y)
-    current_end_anchor_idx = baseline_anchor_idx
-
-    for idx in ranked_indices:
-        if idx in consumed_indices:
-            continue
-        if idx + 3 >= len(x_values) and not is_last_batch:
-            pending_due_to_boundary = True
-            continue
-
-        threshold = _calculate_fluctuation_threshold(working_corrected_y, current_end_anchor_idx, idx)
-        if threshold <= 0:
-            continue
-
-        # 先判断这个点是单刺，还是连续双刺的起点。
-        spike_indices, end_anchor_idx = _detect_spike_pattern(
-            x_values=x_values,
-            original_y=original_y,
-            corrected_y=working_corrected_y,
-            spike_idx=idx,
-            threshold=threshold,
-            is_last_batch=is_last_batch,
-        )
-        if spike_indices:
-            resolved_indices.extend(spike_indices)
-            consumed_indices.update(spike_indices)
-            current_end_anchor_idx = max(current_end_anchor_idx, end_anchor_idx)
-            for spike_idx in spike_indices:
-                # 这里只做临时更新，用于同一窗口内后续点的判定，不是最终输出值。
-                working_corrected_y[spike_idx] = _predict_point_from_previous(x_values, working_corrected_y, spike_idx)
-
-    if resolved_indices:
-        return sorted(set(resolved_indices)), current_end_anchor_idx, False
-
-    return [], baseline_anchor_idx, pending_due_to_boundary
-
-
-def _detect_spike_pattern(
-    x_values: List[float],
-    original_y: List[float],
-    corrected_y: List[float],
-    spike_idx: int,
-    threshold: float,
-    is_last_batch: bool,
-) -> Tuple[List[int], int]:
-    if spike_idx >= len(x_values):
-        return [], spike_idx
-
-    max_pattern_len = min(4, len(x_values) - spike_idx)
-    if max_pattern_len < 4 and not is_last_batch:
-        return [], spike_idx
-
-    predicted_values, residuals = _build_predicted_segment(
-        x_values=x_values,
-        original_y=original_y,
-        corrected_y=corrected_y,
-        start_idx=spike_idx,
-        count=max_pattern_len,
-    )
-    if not residuals or abs(residuals[0]) <= threshold:
-        return [], spike_idx
-
-    residual_sign = 1 if residuals[0] > 0 else -1
-
-    if max_pattern_len >= 4:
-        # 四点连续双刺：都必须同方向偏离基线，并满足高低低高的形态。
-        if _matches_same_direction_pattern(
-            residuals=residuals[:4],
-            threshold=threshold,
-            expected_sign=residual_sign,
-        ) and _matches_four_point_shape(original_y[spike_idx:spike_idx + 4]):
-            return list(range(spike_idx, spike_idx + 4)), min(spike_idx + 4, len(x_values) - 1)
-
-    if max_pattern_len >= 3:
-        # 三点连续双刺：都必须同方向偏离基线，并满足高低高的形态。
-        if _matches_same_direction_pattern(
-            residuals=residuals[:3],
-            threshold=threshold,
-            expected_sign=residual_sign,
-        ) and _matches_three_point_shape(original_y[spike_idx:spike_idx + 3]):
-            return list(range(spike_idx, spike_idx + 3)), min(spike_idx + 3, len(x_values) - 1)
-
-    # 既不是三点连续双刺，也不是四点连续双刺，就按单刺处理。
-    return [spike_idx], min(spike_idx + 1, len(x_values) - 1)
-
-
-def _build_predicted_segment(
-    x_values: List[float],
-    original_y: List[float],
-    corrected_y: List[float],
-    start_idx: int,
-    count: int,
-) -> Tuple[List[float], List[float]]:
-    simulated_y = list(corrected_y)
-    predicted_values: List[float] = []
-    residuals: List[float] = []
-
-    for idx in range(start_idx, min(start_idx + count, len(x_values))):
-        predicted = _predict_point_from_previous(x_values, simulated_y, idx)
-        predicted_values.append(predicted)
-        residuals.append(original_y[idx] - predicted)
-        simulated_y[idx] = predicted
-
-    return predicted_values, residuals
-
-
-def _matches_same_direction_pattern(residuals: List[float], threshold: float, expected_sign: int) -> bool:
-    if not residuals:
-        return False
-
-    for residual in residuals:
-        if abs(residual) <= threshold:
-            return False
-        sign = 1 if residual > 0 else -1
-        if sign != expected_sign:
-            return False
-    return True
-
-
-def _matches_three_point_shape(y_segment: List[float]) -> bool:
-    if len(y_segment) < 3:
-        return False
-    first, second, third = y_segment[:3]
-    all_positive = first > 0 and second > 0 and third > 0
-    all_negative = first < 0 and second < 0 and third < 0
-    if not (all_positive or all_negative):
-        return False
-    return first > second and third > second
-
-
-def _matches_four_point_shape(y_segment: List[float]) -> bool:
-    if len(y_segment) < 4:
-        return False
-    first, second, third, fourth = y_segment[:4]
-    all_positive = first > 0 and second > 0 and third > 0 and fourth > 0
-    all_negative = first < 0 and second < 0 and third < 0 and fourth < 0
-    if not (all_positive or all_negative):
-        return False
-    return first > second and second >= third and fourth > third
-
-
-def _calculate_fluctuation_threshold(y_values: List[float], baseline_anchor_idx: int, spike_idx: int) -> float:
-    """
-    两倍阈值定义为：前序正常区间相邻波动最大值的两倍。
-
-    示例：
-    - 若 spike_idx 对应 361，则起始点是它前一个点，阈值取起始点之前正常区间的波动
-    - 若前一个倒刺结束点已知，则下一次阈值从该结束点开始累计正常波动
-    """
-    start_idx = max(0, baseline_anchor_idx)
-    end_idx = max(start_idx, spike_idx - 1)
-    baseline_segment = y_values[start_idx:end_idx]
-
-    if len(baseline_segment) < 2:
-        baseline_segment = y_values[:end_idx]
-    if len(baseline_segment) < 2:
-        return 1e-12
-
-    # 这里的“阈值”来自前序正常区间的波动，不直接拿某个 y 值去比较。
-    diffs = np.abs(np.diff(np.array(baseline_segment, dtype=float)))
-    if len(diffs) == 0:
-        return 1e-12
-
-    max_fluctuation = float(np.max(diffs))
-    median_fluctuation = float(np.median(diffs))
-    # 先把正常波动放大一层，再乘 2，避免把普通小波纹误判成刺。
-    base_fluctuation = max(max_fluctuation * 1.5, median_fluctuation * 3)
-    return max(base_fluctuation * 2, 1e-12)
 
 
 def _smooth_spike_segment(
