@@ -11,6 +11,7 @@ from . import differentiated
 from . import get_valley
 from . import get_peaks_and_valleys
 from . import excel_smooth_plot
+from . import remove_spikes
 # from . import remove_spikes_by_file
 
 router = APIRouter()
@@ -24,8 +25,9 @@ router.include_router(get_valley.router, prefix='/get_valley', tags=['寻谷'])
 router.include_router(get_peaks_and_valleys.router, prefix='/get_peaks_and_valleys', tags=['同时寻峰寻谷'])
 router.include_router(spectral_arithmetic_operations.router, prefix='/spectral_arithmetic_operations', tags=['谱图的四则运算'])
 router.include_router(spectrum_transform.router, prefix='/spectrum_transform', tags=['谱图变换'])
-router.include_router(detect_step_skipe.router, prefix='/detect_step_skipe', tags=['消除台阶或者倒刺'])
+router.include_router(detect_step_skipe.router, prefix='/detect_step_skipe', tags=['消除台阶'])
 router.include_router(smoothed.router, prefix='/smoothed', tags=['平滑'])
 router.include_router(differentiated.router, prefix='/differentiated', tags=['微分'])
 router.include_router(excel_smooth_plot.router, prefix='/excel_smooth_plot', tags=['Excel平滑并绘制图表'])
+router.include_router(remove_spikes.router, prefix='/remove_spikes', tags=['去除尖刺'])
 # router.include_router(remove_spikes_by_file.router, prefix='/remove_spikes_by_file', tags=['根据文件去除尖刺'])
