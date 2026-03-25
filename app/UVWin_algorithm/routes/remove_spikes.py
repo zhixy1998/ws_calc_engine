@@ -6,7 +6,7 @@ from fastapi import APIRouter
 from typing import Optional, List
 from pydantic import BaseModel, Field
 
-from utils.utils_detect_step_skipes import process_targeted_spike_removal, SpikeCorrectionCache
+from utils.utils_detect_step_skipes import process_targeted_spike_removal, process_targeted_spike_removal_v2, SpikeCorrectionCache
 
 router = APIRouter()
 
@@ -34,8 +34,9 @@ async def remove_spikes(data: InputSchema):
         cached_tail_x = spike_cache.get_tail().get('x', [])
         if cached_tail_x and data.x_data[0] >= cached_tail_x[-1]:
             spike_cache.clear()
-
-    result = process_targeted_spike_removal(
+    print('data.spinedot: ', data.spinedot)
+    
+    result = process_targeted_spike_removal_v2(
         x_data=data.x_data,
         y_data=data.y_data,
         spike_points=data.spinedot,
