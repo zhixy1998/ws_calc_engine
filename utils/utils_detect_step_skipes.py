@@ -428,7 +428,16 @@ def process_targeted_spike_removal_v2(
 
     # 将确认的刺索引分组（相邻刺合并成一段），然后统一平滑
     valid_indices = sorted(set(confirmed_indices))
-    for segment_indices in _group_nearby_indices(valid_indices, max_gap=1):
+    
+    # 动态计算搜索半径对应的点数跨度，允许同一搜寻范围内间断的刺合并成一个大段
+    avg_step = 1.0
+    if len(x) > 1:
+        avg_step = abs(x[0] - x[-1]) / max(1, len(x) - 1)
+    if avg_step == 0:
+        avg_step = 1.0
+    max_gap_points = max(1, int(search_radius / avg_step))
+
+    for segment_indices in _group_nearby_indices(valid_indices, max_gap=max_gap_points):
         segment_values = _smooth_spike_segment(combined_x, combined_y, corrected_y, segment_indices)
         for idx, value in zip(segment_indices, segment_values):
             corrected_y[idx] = value
@@ -505,7 +514,32 @@ def _smooth_spike_segment(
 
     # 多点刺整段统一成同一个目标高度，避免中间再出现一个凹点。
     target_value = baseline_reference + direction * target_offset
-    smoothed_values = [target_value for _ in segment_indices]
+
+    # 为了避免长段替换成用一个值显得太“假”（人工痕迹明显的平线），我们在目标高度基础上叠加背景噪声
+    # 提取参考基线的标准差作为真实数据的随机噪声水平
+    reference_std = float(np.std(np.array(reference_values, dtype=float)))
+    if reference_std < 1e-6:
+        reference_std = 1e-6
+
+    smoothed_values = []
+    for _ in segment_indices:
+        noise = float(np.random.normal(0, reference_std))
+        # 截断极端随机值
+        noise = float(np.clip(noise, -2 * reference_std, 2 * reference_std))
+        val = target_value + noise
+        
+        # 保证去刺后的结果方向不变：原本是正的刺，波动后依然保持在基线之上（或者至少为正）；负向同理
+        if direction > 0:
+            val = max(baseline_reference, val)
+            if baseline_reference >= 0:
+                val = max(0.0, val)
+        else:
+            val = min(baseline_reference, val)
+            if baseline_reference <= 0:
+                val = min(0.0, val)
+                
+        smoothed_values.append(val)
+
     return [float(value) for value in smoothed_values]
 
 
