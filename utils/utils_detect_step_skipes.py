@@ -325,8 +325,12 @@ def _is_spike_at_index(
 ) -> bool:
     """
     判断 y_values[idx] 是否是一个异常跳变点（刺）。
-    用户规则：该点与相邻点的跳变绝对值，大于波动阈值的 k 倍（默认两倍），就是刺。
-    仅凭绝对跳变量判定，不用考虑跳变方向相反。
+
+    判定条件（与 detect_spikes_adaptive 保持一致）：
+      1. 左右两侧的跳变绝对值都大于波动阈值的 k 倍（AND）
+      2. 左右跳变方向相反（先上后下 or 先下后上），即 "尖刺" 形态
+
+    这样可以将陡坡（单调递增/递减）与真正的刺（突起再回落）区分开。
     """
     if idx <= 0 or idx >= len(y_values):
         return False
@@ -341,8 +345,14 @@ def _is_spike_at_index(
     left_jump = abs(y[idx] - y[idx - 1])
     right_jump = abs(y[idx + 1] - y[idx]) if idx < len(y) - 1 else 0.0
 
-    if left_jump > threshold or right_jump > threshold:
-        return True
+    # 条件1：两侧跳变都要超过阈值（AND 而非 OR）
+    if left_jump > threshold and right_jump > threshold:
+        # 条件2：跳变方向相反（刺的特征：先涨后跌 or 先跌后涨）
+        if idx < len(y) - 1:
+            left_dir = y[idx] - y[idx - 1]
+            right_dir = y[idx + 1] - y[idx]
+            if left_dir * right_dir < 0:  # 方向相反
+                return True
     return False
 
 

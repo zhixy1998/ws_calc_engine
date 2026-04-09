@@ -48,7 +48,10 @@ def smoothed_differentiated(data: InputSchema):
 
     y_smooth = savgol_filter(y, window_length=window_length, polyorder=polyorder)  # window=5, polyorder=3
 
-    decimal_places = get_max_decimal_places(y)
+    if round_num is not None:
+        decimal_places = round_num
+    else:
+        decimal_places = get_max_decimal_places(y)
 
     smoothed_y_formatted = [f"{i:.{decimal_places}f}" for i in y_smooth.tolist()]
     return {
