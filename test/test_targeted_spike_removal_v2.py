@@ -24,6 +24,49 @@ WAVELENGTH_END = START_X - TOTAL_POINTS + 1
 # 使用 2.0 的绝对跳变构造“轻微扰动（非刺）”。
 
 SCENARIOS = {
+    'valid_opposite_double_spike_at_batch_tail': {
+        'target_points': [611.0],
+        'mutations': {
+            612.0: 45.0,
+            611.0: -55.0,
+        },
+        'expect_changed': [612.0, 611.0],
+        'expect_unchanged': [613.0],
+        'title': '批次尾点一上一下双刺',
+        'file_label': '批次尾点一上一下双刺',
+    },
+    'valid_same_direction_double_spike_up': {
+        'target_points': [560.0],
+        'mutations': {
+            560.0: 45.0,
+            559.0: 40.0,
+        },
+        'expect_changed': [560.0, 559.0],
+        'expect_unchanged': [561.0, 558.0],
+        'title': '范围内同向向上双刺',
+        'file_label': '范围内同向向上双刺',
+    },
+    'valid_same_direction_double_spike_down': {
+        'target_points': [560.0],
+        'mutations': {
+            560.0: -45.0,
+            559.0: -40.0,
+        },
+        'expect_changed': [560.0, 559.0],
+        'expect_unchanged': [561.0, 558.0],
+        'title': '范围内同向向下双刺',
+        'file_label': '范围内同向向下双刺',
+    },
+    'valid_spike_at_batch_tail': {
+        'target_points': [611.0],
+        'mutations': {
+            611.0: -60.0,
+        },
+        'expect_changed': [611.0],
+        'expect_unchanged': [612.0],
+        'title': '批次尾点有效刺',
+        'file_label': '批次尾点有效刺',
+    },
     'single_valid_spike_at_center': {
         'target_points': [560.0],
         'mutations': {
