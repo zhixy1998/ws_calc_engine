@@ -202,3 +202,58 @@ def _run_case_and_assert(scenario_name):
 )
 def test_process_targeted_spike_removal_v2_scenarios(scenario_name):
     _run_case_and_assert(scenario_name)
+
+
+@pytest.mark.parametrize(
+    'scenario',
+    [
+        {
+            'name': '389_and_387_separated_spikes',
+            'target': 389.0,
+            'prev_x': [400.0, 399.0, 398.0, 397.0, 396.0, 395.0, 394.0, 393.0, 392.0, 391.0],
+            'prev_y': [-0.000152020726, -0.000157429766, -0.000249439729, -0.000158677644, -0.000174423260, -0.000174079027, -0.000190594084, -0.000192691845, -0.000195487624, -0.000156280776],
+            'cur_x': [390.0, 389.0, 388.0, 387.0, 386.0, 385.0, 384.0, 383.0, 382.0, 381.0],
+            'cur_y': [-0.000152440115, -0.019574291460, -0.000185141005, 0.000219367658, -0.000200112871, -0.000220049110, -0.000214775368, -0.000208233498, -0.000186000769, -0.000221100311],
+            'expect_changed': [389.0, 387.0],
+        },
+        {
+            'name': '760_and_758_separated_spikes',
+            'target': 760.0,
+            'prev_x': [770.0, 769.0, 768.0, 767.0, 766.0, 765.0, 764.0, 763.0, 762.0, 761.0],
+            'prev_y': [-0.000559255745, -0.000552732387, -0.000557095385, -0.000514311569, -0.000518804929, -0.000547184841, -0.000534496270, -0.000554885045, -0.000566931206, -0.000514125121],
+            'cur_x': [760.0, 759.0, 758.0, 757.0, 756.0, 755.0, 754.0, 753.0, 752.0, 751.0],
+            'cur_y': [-0.002004632824, -0.000498303202, -0.000771174547, -0.000449440381, -0.000500589179, -0.000463280884, -0.000466176664, -0.000419772115, -0.000461954346, -0.000436618631],
+            'expect_changed': [760.0, 758.0],
+        },
+    ],
+    ids=lambda scenario: scenario['name'],
+)
+def test_process_targeted_spike_removal_v2_separated_spikes(scenario):
+    cache = SpikeCorrectionCache()
+
+    first_result = process_targeted_spike_removal_v2(
+        x_data=scenario['prev_x'],
+        y_data=scenario['prev_y'],
+        spike_points=[scenario['target']],
+        wavelength_end=WAVELENGTH_END,
+        cache=cache,
+        search_radius=5.0,
+        spike_k=2.0,
+    )
+    assert first_result['code'] == 200
+
+    second_result = process_targeted_spike_removal_v2(
+        x_data=scenario['cur_x'],
+        y_data=scenario['cur_y'],
+        spike_points=[scenario['target']],
+        wavelength_end=WAVELENGTH_END,
+        cache=cache,
+        search_radius=5.0,
+        spike_k=2.0,
+    )
+    assert second_result['code'] == 200
+
+    index_map = {float(x_value): idx for idx, x_value in enumerate(scenario['cur_x'])}
+    for x_value in scenario['expect_changed']:
+        idx = index_map[x_value]
+        assert second_result['smoothed_data'][idx] != pytest.approx(scenario['cur_y'][idx])

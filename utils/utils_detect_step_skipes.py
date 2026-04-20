@@ -322,6 +322,7 @@ def _is_spike_at_index(
     y_values: List[float],
     idx: int,
     k: float = 2.0,
+    excluded_indices: Optional[set] = None,
 ) -> bool:
     """
     判断 y_values[idx] 是否是一个异常跳变点（刺）。
@@ -336,7 +337,11 @@ def _is_spike_at_index(
         return False
 
     y = np.array(y_values, dtype=float)
-    diffs = np.abs(np.diff(y))
+    if excluded_indices:
+        kept_values = [float(value) for i, value in enumerate(y_values) if i not in excluded_indices]
+        diffs = np.abs(np.diff(np.array(kept_values, dtype=float))) if len(kept_values) > 1 else np.array([])
+    else:
+        diffs = np.abs(np.diff(y))
     avg_deviation = np.mean(diffs) if len(diffs) > 0 else 0.0
     if avg_deviation == 0.0:
         return False
@@ -426,12 +431,13 @@ def _is_spike_segment(
     y_values: List[float],
     segment_indices: List[int],
     k: float = 2.0,
+    excluded_indices: Optional[set] = None,
 ) -> bool:
     if not segment_indices:
         return False
 
     if len(segment_indices) == 1:
-        return _is_spike_at_index(y_values, segment_indices[0], k=k)
+        return _is_spike_at_index(y_values, segment_indices[0], k=k, excluded_indices=excluded_indices)
 
     baseline = _fit_segment_baseline(x_values, y_values, segment_indices)
     if baseline is None:
@@ -466,6 +472,16 @@ def _is_spike_segment(
     return bool(opposite_double_spike or same_direction_double_spike)
 
 
+def _calculate_spike_strength(y_values: List[float], idx: int) -> float:
+    if idx <= 0 or idx >= len(y_values) - 1:
+        return 0.0
+
+    y = np.array(y_values, dtype=float)
+    left_jump = abs(y[idx] - y[idx - 1])
+    right_jump = abs(y[idx + 1] - y[idx])
+    return float(min(left_jump, right_jump))
+
+
 def _collect_spike_segment_indices(
     x_values: List[float],
     y_values: List[float],
@@ -473,6 +489,8 @@ def _collect_spike_segment_indices(
     prefix_len: int,
     spike_k: float,
     max_segment_length: int = 2,
+    preferred_index: Optional[int] = None,
+    max_single_spikes: int = 3,
 ) -> List[int]:
     if not candidate_indices:
         return []
@@ -482,7 +500,7 @@ def _collect_spike_segment_indices(
     used_indices = set()
     confirmed_indices: List[int] = []
 
-    for segment_length in range(max_segment_length, 0, -1):
+    for segment_length in range(max_segment_length, 1, -1):
         for start_idx in ordered_candidates:
             segment_indices = list(range(start_idx, start_idx + segment_length))
             if any(idx not in candidate_set for idx in segment_indices):
@@ -494,6 +512,42 @@ def _collect_spike_segment_indices(
             if _is_spike_segment(x_values, y_values, segment_indices, k=spike_k):
                 confirmed_indices.extend(segment_indices)
                 used_indices.update(segment_indices)
+
+    available_single_indices = [
+        idx for idx in ordered_candidates
+        if idx >= prefix_len and idx not in used_indices
+    ]
+    checked_indices = set()
+
+    while available_single_indices and len(confirmed_indices) < max_single_spikes:
+        current_idx = None
+        if preferred_index is not None and preferred_index in available_single_indices and preferred_index not in checked_indices:
+            current_idx = preferred_index
+        else:
+            remaining_indices = [idx for idx in available_single_indices if idx not in checked_indices]
+            if not remaining_indices:
+                break
+            current_idx = max(
+                remaining_indices,
+                key=lambda idx: _calculate_spike_strength(y_values, idx),
+            )
+
+        excluded_indices = set(confirmed_indices)
+        if _is_spike_segment(
+            x_values,
+            y_values,
+            [current_idx],
+            k=spike_k,
+            excluded_indices=excluded_indices,
+        ):
+            confirmed_indices.append(current_idx)
+            used_indices.add(current_idx)
+
+        checked_indices.add(current_idx)
+        available_single_indices = [
+            idx for idx in ordered_candidates
+            if idx >= prefix_len and idx not in used_indices
+        ]
 
     return sorted(set(confirmed_indices))
 
@@ -570,6 +624,11 @@ def process_targeted_spike_removal_v2(
         if not candidate_indices:
             continue
 
+        preferred_index = next(
+            (i for i in candidate_indices if abs(combined_x[i] - center_x) < 1e-6),
+            None,
+        )
+
         segment_confirmed_indices = _collect_spike_segment_indices(
             x_values=combined_x,
             y_values=corrected_y,
@@ -577,6 +636,8 @@ def process_targeted_spike_removal_v2(
             prefix_len=prefix_len,
             spike_k=spike_k,
             max_segment_length=2,
+            preferred_index=preferred_index,
+            max_single_spikes=3,
         )
         confirmed_indices.extend(segment_confirmed_indices)
 
