@@ -495,11 +495,19 @@ def _collect_spike_segment_indices(
     if not candidate_indices:
         return []
 
+    # 先把候选点整理成便于查找和按顺序遍历的形式
     candidate_set = set(candidate_indices)
     ordered_candidates = sorted(candidate_indices)
+
+    # 这里记录已经被确认过的点
+    # 一旦某个点已经被当成刺处理 后面就不应该再次参与判断
     used_indices = set()
+
+    # 这里收集最终确认需要平滑的点
     confirmed_indices: List[int] = []
 
+    # 先优先检查连续小段
+    # 因为双刺或者短小连续刺一旦成立 就不应该再拆成单点重复判断
     for segment_length in range(max_segment_length, 1, -1):
         for start_idx in ordered_candidates:
             segment_indices = list(range(start_idx, start_idx + segment_length))
@@ -513,25 +521,37 @@ def _collect_spike_segment_indices(
                 confirmed_indices.extend(segment_indices)
                 used_indices.update(segment_indices)
 
+    # 过滤掉缓存前缀和已经确认过的点
+    # 剩下的才进入单点判断流程
     available_single_indices = [
         idx for idx in ordered_candidates
         if idx >= prefix_len and idx not in used_indices
     ]
+
+    # 这里记录在当前阈值条件下已经判过但没有通过的点
+    # 只要后面确认了新的刺 这些失败点就有可能因为阈值变化而翻盘
     checked_indices = set()
 
     while available_single_indices and len(confirmed_indices) < max_single_spikes:
-        current_idx = None
-        if preferred_index is not None and preferred_index in available_single_indices and preferred_index not in checked_indices:
+        # 先取出这轮还没有判断过的候选点
+        remaining_indices = [idx for idx in available_single_indices if idx not in checked_indices]
+        if not remaining_indices:
+            break
+
+        # 如果用户给的中心点就在候选里 这一轮先看中心点
+        # 这样可以保持接口语义不变 也就是优先围绕用户指定的位置做判断
+        if preferred_index is not None and preferred_index in remaining_indices:
             current_idx = preferred_index
         else:
-            remaining_indices = [idx for idx in available_single_indices if idx not in checked_indices]
-            if not remaining_indices:
-                break
+            # 如果中心点已经处理过或者不在候选里
+            # 就退回到强度优先的策略 先处理跳变更明显的点
             current_idx = max(
                 remaining_indices,
                 key=lambda idx: _calculate_spike_strength(y_values, idx),
             )
 
+        # 这里把已经确认的刺从阈值统计里排除掉
+        # 目的是避免前面的大刺把后面较小的真刺压下去
         excluded_indices = set(confirmed_indices)
         if _is_spike_segment(
             x_values,
@@ -543,7 +563,19 @@ def _collect_spike_segment_indices(
             confirmed_indices.append(current_idx)
             used_indices.add(current_idx)
 
-        checked_indices.add(current_idx)
+            # 这里是这次修复的关键
+            # 当前点一旦确认成刺 其他点的阈值就会立刻变化
+            # 之前失败的点不能直接判死 必须回到待检查状态重新再跑一遍
+            # 否则就会出现先检查中心点失败 后面虽然确认了更大的刺
+            # 但是中心点永远没有机会重新判断的问题
+            checked_indices = set()
+        else:
+            # 只有在这一轮阈值下确实失败的点 才暂时记为已检查
+            # 如果后面又确认了新的刺 这个记录会被清空 然后重新判断
+            checked_indices.add(current_idx)
+
+        # 每一轮结束后重新刷新还没有被占用的候选点
+        # 这样新确认的刺会立刻从后续列表里移除
         available_single_indices = [
             idx for idx in ordered_candidates
             if idx >= prefix_len and idx not in used_indices
@@ -599,23 +631,28 @@ def process_targeted_spike_removal_v2(
     if wavelength_end is not None and x:
         is_last_batch = min(x) <= wavelength_end
 
-    # 合并 pending_spikes（上批次未处理的中心波长）与本批次传入的中心波长
+    # 这里把上一批还没有处理完的中心点和本批新传入的中心点合并起来
+    # 保证跨批次时不会把指定位置丢掉
     pending_spikes = _unique_keep_order(cache._data['pending_spikes'] + list(spike_points or []))
     remaining_pending: List[float] = []
 
-    confirmed_indices: List[int] = []  # 经过刺判断后确认需要平滑的索引
+    # 这里收集所有中心范围里最终确认出来的刺点
+    confirmed_indices: List[int] = []
 
     for center_x in pending_spikes:
         center_x = float(center_x)
         lo = center_x - search_radius
         hi = center_x + search_radius
 
-        # 只要当前批次还没有安全跨过搜索下限（留出一点余量算右侧跳变差分），就保留到下一批
-        # 即使我们在本批次查到了 spike 并平滑处理，保留也没关系，因为下一批次该位置已被抚平，不会再次满足 spike 判定
+        # 只要当前批次还没有完整跨过这个中心点附近的搜索范围
+        # 就先把它保留给下一批
+        # 这样可以避免因为右侧数据还没有到齐 导致刺判断不完整
         if not x or min(x) > lo - 2.0:
             remaining_pending.append(center_x)
 
-        # 找出 combined_x 中落在 [lo, hi] 范围内的所有索引（含边界）
+        # 这里不是把中心点当成唯一刺点
+        # 而是把中心点左右一段范围都当成候选区
+        # 只要落在这个范围里的点 都有资格参与后续真假刺判断
         candidate_indices = [
             i for i, xv in enumerate(combined_x)
             if lo <= xv <= hi
@@ -624,11 +661,16 @@ def process_targeted_spike_removal_v2(
         if not candidate_indices:
             continue
 
+        # 如果中心点本身刚好存在于候选区里
+        # 后面的单点流程会优先检查它
         preferred_index = next(
             (i for i in candidate_indices if abs(combined_x[i] - center_x) < 1e-6),
             None,
         )
 
+        # 真正的筛选逻辑都在这个函数里完成
+        # 它会先查连续刺 再查单点刺
+        # 并且在确认新刺后重新评估前面失败过的候选点
         segment_confirmed_indices = _collect_spike_segment_indices(
             x_values=combined_x,
             y_values=corrected_y,

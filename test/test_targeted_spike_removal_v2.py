@@ -257,3 +257,60 @@ def test_process_targeted_spike_removal_v2_separated_spikes(scenario):
     for x_value in scenario['expect_changed']:
         idx = index_map[x_value]
         assert second_result['smoothed_data'][idx] != pytest.approx(scenario['cur_y'][idx])
+
+
+def test_process_targeted_spike_removal_v2_rechecks_failed_candidates_after_confirming_new_spike():
+    cache = SpikeCorrectionCache()
+
+    prev_x = [360.0, 359.0, 358.0, 357.0, 356.0, 355.0, 354.0, 353.0, 352.0, 351.0]
+    prev_y = [
+        -0.000005527762,
+        -0.000081680637,
+        -0.000070046784,
+        -0.000034445481,
+        -0.000039286235,
+        0.000004858933,
+        -0.000026554157,
+        0.000003480230,
+        -0.000036569699,
+        0.000002858673,
+    ]
+    cur_x = [350.0, 349.0, 348.0, 347.0, 346.0, 345.0, 344.0, 343.0, 342.0, 341.0]
+    cur_y = [
+        -0.000309921810,
+        -0.000042986582,
+        0.000648324012,
+        -0.000019899048,
+        0.000028036809,
+        -0.000074587350,
+        -0.000058448857,
+        -0.000068076652,
+        -0.000028828312,
+        -0.000069791451,
+    ]
+
+    first_result = process_targeted_spike_removal_v2(
+        x_data=prev_x,
+        y_data=prev_y,
+        spike_points=[350.0],
+        wavelength_end=341.0,
+        cache=cache,
+        search_radius=5.0,
+        spike_k=2.0,
+    )
+    assert first_result['code'] == 200
+
+    second_result = process_targeted_spike_removal_v2(
+        x_data=cur_x,
+        y_data=cur_y,
+        spike_points=[350.0],
+        wavelength_end=341.0,
+        cache=cache,
+        search_radius=5.0,
+        spike_k=2.0,
+    )
+    assert second_result['code'] == 200
+
+    index_map = {float(x_value): idx for idx, x_value in enumerate(cur_x)}
+    assert second_result['smoothed_data'][index_map[348.0]] != pytest.approx(cur_y[index_map[348.0]])
+    assert second_result['smoothed_data'][index_map[350.0]] != pytest.approx(cur_y[index_map[350.0]])
