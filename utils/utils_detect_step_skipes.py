@@ -80,8 +80,10 @@ class SpikeCorrectionCache:
         }
 
     def update(self, x_data: List[float], y_data: List[float], tail_size: int = 6):
-        self._data['tail_x'] = list(x_data[-tail_size:]) if len(x_data) >= tail_size else list(x_data)
-        self._data['tail_y'] = list(y_data[-tail_size:]) if len(y_data) >= tail_size else list(y_data)
+        new_x = self._data['tail_x'] + list(x_data)
+        new_y = self._data['tail_y'] + list(y_data)
+        self._data['tail_x'] = new_x[-tail_size:]
+        self._data['tail_y'] = new_y[-tail_size:]
 
     def get_tail(self) -> Dict[str, List[float]]:
         return {
@@ -316,6 +318,401 @@ def process_targeted_spike_removal(
     }
 
 
+def _is_spike_at_index(
+    y_values: List[float],
+    idx: int,
+    k: float = 2.0,
+    excluded_indices: Optional[set] = None,
+) -> bool:
+    """
+    判断 y_values[idx] 是否是一个异常跳变点（刺）。
+
+    判定条件（与 detect_spikes_adaptive 保持一致）：
+      1. 左右两侧的跳变绝对值都大于波动阈值的 k 倍（AND）
+      2. 左右跳变方向相反（先上后下 or 先下后上），即 "尖刺" 形态
+
+    这样可以将陡坡（单调递增/递减）与真正的刺（突起再回落）区分开。
+    """
+    if idx <= 0 or idx >= len(y_values):
+        return False
+
+    y = np.array(y_values, dtype=float)
+    if excluded_indices:
+        kept_values = [float(value) for i, value in enumerate(y_values) if i not in excluded_indices]
+        diffs = np.abs(np.diff(np.array(kept_values, dtype=float))) if len(kept_values) > 1 else np.array([])
+    else:
+        diffs = np.abs(np.diff(y))
+    avg_deviation = np.mean(diffs) if len(diffs) > 0 else 0.0
+    if avg_deviation == 0.0:
+        return False
+
+    threshold = k * avg_deviation
+    left_jump = abs(y[idx] - y[idx - 1])
+    if idx < len(y) - 1:
+        right_jump = abs(y[idx + 1] - y[idx])
+
+        # 条件1：两侧跳变都要超过阈值（AND 而非 OR）
+        if left_jump > threshold and right_jump > threshold:
+            # 条件2：跳变方向相反（刺的特征：先涨后跌 or 先跌后涨）
+            left_dir = y[idx] - y[idx - 1]
+            right_dir = y[idx + 1] - y[idx]
+            if left_dir * right_dir < 0:  # 方向相反
+                return True
+
+    # 兼容批次尾点：当前点是最后一个点时，暂时没有右邻点，
+    # 使用左侧短趋势外推值作为参考，避免尾点刺在下一批次被永久跳过。
+    if idx == len(y) - 1:
+        history_start = max(0, idx - 4)
+        predicted_y = predict_next_y_simple(y[history_start:idx].tolist())
+        prediction_jump = abs(y[idx] - predicted_y)
+        if left_jump > threshold and prediction_jump > threshold:
+            return True
+    return False
+
+
+def _fit_segment_baseline(
+    x_values: List[float],
+    y_values: List[float],
+    segment_indices: List[int],
+    reference_window: int = 4,
+) -> Optional[Tuple[float, float, List[int]]]:
+    if not segment_indices:
+        return None
+
+    start_idx = segment_indices[0]
+    end_idx = segment_indices[-1]
+    left_indices = list(range(max(0, start_idx - reference_window), start_idx))
+    right_indices = list(range(end_idx + 1, min(len(y_values), end_idx + reference_window + 1)))
+    reference_indices = left_indices + right_indices
+
+    if len(reference_indices) < 3:
+        return None
+
+    ref_x = [float(x_values[idx]) for idx in reference_indices]
+    ref_y = [float(y_values[idx]) for idx in reference_indices]
+
+    if len(set(ref_x)) > 1:
+        slope, intercept = np.polyfit(ref_x, ref_y, 1)
+    else:
+        slope = 0.0
+        intercept = float(np.mean(ref_y))
+
+    return float(slope), float(intercept), reference_indices
+
+
+def _calculate_segment_spike_threshold(
+    x_values: List[float],
+    y_values: List[float],
+    reference_indices: List[int],
+    slope: float,
+    intercept: float,
+    k: float,
+) -> float:
+    if not reference_indices:
+        return 1e-6
+
+    ref_x = np.array([float(x_values[idx]) for idx in reference_indices], dtype=float)
+    ref_y = np.array([float(y_values[idx]) for idx in reference_indices], dtype=float)
+    fitted_ref_y = slope * ref_x + intercept
+    ref_residuals = np.abs(ref_y - fitted_ref_y)
+    ref_diffs = np.abs(np.diff(ref_y)) if len(ref_y) > 1 else np.array([0.0])
+
+    # 保守起见，同时参考去趋势后的残差和局部相邻点波动，但不直接把整体斜率当成噪声。
+    noise_floor = max(
+        float(np.mean(ref_residuals)) * 2.0 if len(ref_residuals) > 0 else 0.0,
+        float(np.mean(ref_diffs)) * 0.35 if len(ref_diffs) > 0 else 0.0,
+        1e-6,
+    )
+    return max(k * noise_floor, 1e-6)
+
+
+def _is_spike_segment(
+    x_values: List[float],
+    y_values: List[float],
+    segment_indices: List[int],
+    k: float = 2.0,
+    excluded_indices: Optional[set] = None,
+) -> bool:
+    if not segment_indices:
+        return False
+
+    if len(segment_indices) == 1:
+        return _is_spike_at_index(y_values, segment_indices[0], k=k, excluded_indices=excluded_indices)
+
+    baseline = _fit_segment_baseline(x_values, y_values, segment_indices)
+    if baseline is None:
+        return False
+
+    slope, intercept, reference_indices = baseline
+    threshold = _calculate_segment_spike_threshold(
+        x_values=x_values,
+        y_values=y_values,
+        reference_indices=reference_indices,
+        slope=slope,
+        intercept=intercept,
+        k=k,
+    )
+
+    segment_x = np.array([float(x_values[idx]) for idx in segment_indices], dtype=float)
+    segment_y = np.array([float(y_values[idx]) for idx in segment_indices], dtype=float)
+    fitted_segment_y = slope * segment_x + intercept
+    residuals = segment_y - fitted_segment_y
+    abs_residuals = np.abs(residuals)
+
+    opposite_double_spike = (
+        np.any(residuals > threshold * 1.2)
+        and np.any(residuals < -threshold * 1.2)
+        and np.min(abs_residuals) > threshold * 1.1
+    )
+    same_direction_double_spike = (
+        np.all(abs_residuals > threshold * 1.6)
+        and (np.all(residuals > 0) or np.all(residuals < 0))
+    )
+
+    return bool(opposite_double_spike or same_direction_double_spike)
+
+
+def _calculate_spike_strength(y_values: List[float], idx: int) -> float:
+    if idx <= 0 or idx >= len(y_values) - 1:
+        return 0.0
+
+    y = np.array(y_values, dtype=float)
+    left_jump = abs(y[idx] - y[idx - 1])
+    right_jump = abs(y[idx + 1] - y[idx])
+    return float(min(left_jump, right_jump))
+
+
+def _collect_spike_segment_indices(
+    x_values: List[float],
+    y_values: List[float],
+    candidate_indices: List[int],
+    prefix_len: int,
+    spike_k: float,
+    max_segment_length: int = 2,
+    preferred_index: Optional[int] = None,
+    max_single_spikes: int = 3,
+) -> List[int]:
+    if not candidate_indices:
+        return []
+
+    # 先把候选点整理成便于查找和按顺序遍历的形式
+    candidate_set = set(candidate_indices)
+    ordered_candidates = sorted(candidate_indices)
+
+    # 这里记录已经被确认过的点
+    # 一旦某个点已经被当成刺处理 后面就不应该再次参与判断
+    used_indices = set()
+
+    # 这里收集最终确认需要平滑的点
+    confirmed_indices: List[int] = []
+
+    # 先优先检查连续小段
+    # 因为双刺或者短小连续刺一旦成立 就不应该再拆成单点重复判断
+    for segment_length in range(max_segment_length, 1, -1):
+        for start_idx in ordered_candidates:
+            segment_indices = list(range(start_idx, start_idx + segment_length))
+            if any(idx not in candidate_set for idx in segment_indices):
+                continue
+            if any(idx in used_indices for idx in segment_indices):
+                continue
+            if not any(idx >= prefix_len for idx in segment_indices):
+                continue
+            if _is_spike_segment(x_values, y_values, segment_indices, k=spike_k):
+                confirmed_indices.extend(segment_indices)
+                used_indices.update(segment_indices)
+
+    # 过滤掉缓存前缀和已经确认过的点
+    # 剩下的才进入单点判断流程
+    available_single_indices = [
+        idx for idx in ordered_candidates
+        if idx >= prefix_len and idx not in used_indices
+    ]
+
+    # 这里记录在当前阈值条件下已经判过但没有通过的点
+    # 只要后面确认了新的刺 这些失败点就有可能因为阈值变化而翻盘
+    checked_indices = set()
+
+    while available_single_indices and len(confirmed_indices) < max_single_spikes:
+        # 先取出这轮还没有判断过的候选点
+        remaining_indices = [idx for idx in available_single_indices if idx not in checked_indices]
+        if not remaining_indices:
+            break
+
+        # 如果用户给的中心点就在候选里 这一轮先看中心点
+        # 这样可以保持接口语义不变 也就是优先围绕用户指定的位置做判断
+        if preferred_index is not None and preferred_index in remaining_indices:
+            current_idx = preferred_index
+        else:
+            # 如果中心点已经处理过或者不在候选里
+            # 就退回到强度优先的策略 先处理跳变更明显的点
+            current_idx = max(
+                remaining_indices,
+                key=lambda idx: _calculate_spike_strength(y_values, idx),
+            )
+
+        # 这里把已经确认的刺从阈值统计里排除掉
+        # 目的是避免前面的大刺把后面较小的真刺压下去
+        excluded_indices = set(confirmed_indices)
+        if _is_spike_segment(
+            x_values,
+            y_values,
+            [current_idx],
+            k=spike_k,
+            excluded_indices=excluded_indices,
+        ):
+            confirmed_indices.append(current_idx)
+            used_indices.add(current_idx)
+
+            # 这里是这次修复的关键
+            # 当前点一旦确认成刺 其他点的阈值就会立刻变化
+            # 之前失败的点不能直接判死 必须回到待检查状态重新再跑一遍
+            # 否则就会出现先检查中心点失败 后面虽然确认了更大的刺
+            # 但是中心点永远没有机会重新判断的问题
+            checked_indices = set()
+        else:
+            # 只有在这一轮阈值下确实失败的点 才暂时记为已检查
+            # 如果后面又确认了新的刺 这个记录会被清空 然后重新判断
+            checked_indices.add(current_idx)
+
+        # 每一轮结束后重新刷新还没有被占用的候选点
+        # 这样新确认的刺会立刻从后续列表里移除
+        available_single_indices = [
+            idx for idx in ordered_candidates
+            if idx >= prefix_len and idx not in used_indices
+        ]
+
+    return sorted(set(confirmed_indices))
+
+
+def process_targeted_spike_removal_v2(
+    x_data: List[float],
+    y_data: List[float],
+    spike_points: List[float],
+    wavelength_end: Optional[float],
+    cache: SpikeCorrectionCache,
+    search_radius: float = 5.0,
+    spike_k: float = 2.5,
+) -> Dict[str, Any]:
+    """
+    按指定 x 坐标（中心波长）在邻域范围内检测并消除倒刺（新逻辑）。
+
+    与旧版 process_targeted_spike_removal 的区别：
+      - 旧版：spike_points 是精确 x 坐标，命中即平滑，不做刺判断。
+      - 新版：spike_points 是候选中心波长，在 [center - search_radius,
+              center + search_radius] 范围内（含边界）查找所有候选点，
+              对每个候选点判断是否真的是尖刺，是刺才平滑，否则保持原值。
+
+    参数:
+        x_data: 当前批次 x 数据（波长，从高到低）
+        y_data: 当前批次 y 数据（吸光度）
+        spike_points: 候选倒刺中心波长列表（如 [550.0]）
+        wavelength_end: 本次测量的结束波长，用于判断是否最后一批
+        cache: 倒刺缓存对象（SpikeCorrectionCache）
+        search_radius: 中心波长左右各搜索多少 nm 范围，默认 5.0
+        spike_k: 刺判断时的门限倍率（k × 平均波动），默认 2.5
+    """
+    try:
+        x = [float(val) for val in x_data]
+        y = [float(val) for val in y_data]
+    except ValueError:
+        raise APIException(ErrorCode.X_Y_MUST_NUM)
+
+    if len(x) != len(y):
+        raise APIException(ErrorCode.X_Y_LENGTH_MISMATCH)
+
+    # 拼接上一批次的尾部缓存（与旧版相同，保证跨批次边界的刺也能被检测）
+    tail = cache.get_tail()
+    combined_x = tail['x'] + x
+    combined_y = tail['y'] + y
+    corrected_y = list(combined_y)
+    prefix_len = len(tail['x'])
+
+    is_last_batch = False
+    if wavelength_end is not None and x:
+        is_last_batch = min(x) <= wavelength_end
+
+    # 这里把上一批还没有处理完的中心点和本批新传入的中心点合并起来
+    # 保证跨批次时不会把指定位置丢掉
+    pending_spikes = _unique_keep_order(cache._data['pending_spikes'] + list(spike_points or []))
+    remaining_pending: List[float] = []
+
+    # 这里收集所有中心范围里最终确认出来的刺点
+    confirmed_indices: List[int] = []
+
+    for center_x in pending_spikes:
+        center_x = float(center_x)
+        lo = center_x - search_radius
+        hi = center_x + search_radius
+
+        # 只要当前批次还没有完整跨过这个中心点附近的搜索范围
+        # 就先把它保留给下一批
+        # 这样可以避免因为右侧数据还没有到齐 导致刺判断不完整
+        if not x or min(x) > lo - 2.0:
+            remaining_pending.append(center_x)
+
+        # 这里不是把中心点当成唯一刺点
+        # 而是把中心点左右一段范围都当成候选区
+        # 只要落在这个范围里的点 都有资格参与后续真假刺判断
+        candidate_indices = [
+            i for i, xv in enumerate(combined_x)
+            if lo <= xv <= hi
+        ]
+
+        if not candidate_indices:
+            continue
+
+        # 如果中心点本身刚好存在于候选区里
+        # 后面的单点流程会优先检查它
+        preferred_index = next(
+            (i for i in candidate_indices if abs(combined_x[i] - center_x) < 1e-6),
+            None,
+        )
+
+        # 真正的筛选逻辑都在这个函数里完成
+        # 它会先查连续刺 再查单点刺
+        # 并且在确认新刺后重新评估前面失败过的候选点
+        segment_confirmed_indices = _collect_spike_segment_indices(
+            x_values=combined_x,
+            y_values=corrected_y,
+            candidate_indices=candidate_indices,
+            prefix_len=prefix_len,
+            spike_k=spike_k,
+            max_segment_length=2,
+            preferred_index=preferred_index,
+            max_single_spikes=3,
+        )
+        confirmed_indices.extend(segment_confirmed_indices)
+
+    # 将确认的刺索引分组（相邻刺合并成一段），然后统一平滑
+    valid_indices = sorted(set(confirmed_indices))
+    
+    # 动态计算搜索半径对应的点数跨度，允许同一搜寻范围内间断的刺合并成一个大段
+    avg_step = 1.0
+    if len(x) > 1:
+        avg_step = abs(x[0] - x[-1]) / max(1, len(x) - 1)
+    if avg_step == 0:
+        avg_step = 1.0
+    max_gap_points = max(1, int(search_radius / avg_step))
+
+    for segment_indices in _group_nearby_indices(valid_indices, max_gap=max_gap_points):
+        segment_values = _smooth_spike_segment(combined_x, combined_y, corrected_y, segment_indices)
+        for idx, value in zip(segment_indices, segment_values):
+            corrected_y[idx] = value
+
+    current_y = corrected_y[prefix_len:]
+    cache._data['pending_spikes'] = remaining_pending
+    cache.update(x, current_y)
+
+    if is_last_batch:
+        cache.clear()
+
+    return {
+        'code': 200,
+        'smoothed_data': current_y,
+        'message': 'success'
+    }
+
+
 def _unique_keep_order(values: List[Any]) -> List[Any]:
     result = []
     seen = set()
@@ -342,7 +739,6 @@ def _group_nearby_indices(indices: List[int], max_gap: int = 1) -> List[List[int
 
 
 
-
 def _smooth_spike_segment(
     x_values: List[float],
     original_y_values: List[float],
@@ -351,58 +747,136 @@ def _smooth_spike_segment(
 ) -> List[float]:
     if not segment_indices:
         return []
-    if len(segment_indices) == 1:
-        # 单刺仍然按前序点预测，尽量保持单点修复自然。
-        idx = segment_indices[0]
-        return [_predict_point_from_previous(x_values, corrected_y_values, idx)]
 
     start_idx = segment_indices[0]
     end_idx = segment_indices[-1]
-    left_anchor_idx = start_idx - 1 if start_idx - 1 >= 0 else None
-    right_anchor_idx = end_idx + 1 if end_idx + 1 < len(corrected_y_values) else None
 
-    if left_anchor_idx is None and right_anchor_idx is None:
-        return [_predict_point_from_previous(x_values, corrected_y_values, idx) for idx in segment_indices]
+    # 使用刺段左右两侧正常窗口分别拟合，再对刺段做受边界约束的过渡。
+    # 这样既利用 345-350 / 353-358 这类窗口趋势，又避免整段被整体抬高。
+    window_size = 6
+    left_start = max(0, start_idx - window_size)
+    left_indices = list(range(left_start, start_idx))
 
-    # average_threshold 是双刺段最终要保留的“平均阈值高度”。
-    average_threshold = _calculate_segment_average_threshold(corrected_y_values, segment_indices)
-    reference_values = []
-    if left_anchor_idx is not None:
-        reference_values.append(corrected_y_values[left_anchor_idx])
-    if right_anchor_idx is not None:
-        reference_values.append(corrected_y_values[right_anchor_idx])
+    right_end = min(len(corrected_y_values), end_idx + window_size + 1)
+    right_indices = list(range(end_idx + 1, right_end))
 
-    # baseline_reference 是刺段两侧正常点的参考基线。
-    baseline_reference = float(np.mean(reference_values)) if reference_values else float(corrected_y_values[start_idx])
-    original_residuals = [original_y_values[idx] - baseline_reference for idx in segment_indices]
-    residual_mean = float(np.mean(original_residuals))
-    direction = 1.0 if residual_mean >= 0 else -1.0
-    # 再加一个上限，避免所谓“平均阈值”反而比原始刺还高。
-    residual_cap = float(np.quantile(np.abs(np.array(original_residuals, dtype=float)), 0.75)) * 0.85
-    target_offset = min(average_threshold, residual_cap)
-    target_offset = max(target_offset, 1e-12)
+    if not left_indices and not right_indices:
+        return [float(corrected_y_values[idx]) for idx in segment_indices]
 
-    # 多点刺整段统一成同一个目标高度，避免中间再出现一个凹点。
-    target_value = baseline_reference + direction * target_offset
-    smoothed_values = [target_value for _ in segment_indices]
+    def _fit_predict(indices: List[int], target_x: float) -> Optional[float]:
+        if not indices:
+            return None
+        fit_x = [float(x_values[idx]) for idx in indices]
+        fit_y = [float(corrected_y_values[idx]) for idx in indices]
+        if len(set(fit_x)) > 1:
+            slope, intercept = np.polyfit(fit_x, fit_y, 1)
+            return float(slope * target_x + intercept)
+        return float(np.mean(fit_y))
+
+    def _fit_params(indices: List[int]) -> Tuple[float, float]:
+        fit_x = [float(x_values[idx]) for idx in indices]
+        fit_y = [float(corrected_y_values[idx]) for idx in indices]
+        if len(set(fit_x)) > 1:
+            slope, intercept = np.polyfit(fit_x, fit_y, 1)
+            return float(slope), float(intercept)
+        return 0.0, float(np.mean(fit_y))
+
+    boundary_values: List[float] = []
+    if start_idx > 0:
+        boundary_values.append(float(corrected_y_values[start_idx - 1]))
+    if end_idx < len(corrected_y_values) - 1:
+        boundary_values.append(float(corrected_y_values[end_idx + 1]))
+
+    lower_bound = None
+    upper_bound = None
+    if boundary_values:
+        lower_bound = min(boundary_values)
+        upper_bound = max(boundary_values)
+
+    segment_count = len(segment_indices)
+    smoothed_values: List[float] = []
+
+    if left_indices and right_indices:
+        start_prediction = _fit_predict(left_indices, float(x_values[start_idx]))
+        end_prediction = _fit_predict(right_indices, float(x_values[end_idx]))
+
+        if segment_count == 1:
+            candidate_value = (float(start_prediction) + float(end_prediction)) / 2.0
+            smoothed_values.append(candidate_value)
+        else:
+            for offset, _ in enumerate(segment_indices):
+                t = offset / (segment_count - 1)
+                candidate_value = float(start_prediction) * (1.0 - t) + float(end_prediction) * t
+                smoothed_values.append(candidate_value)
+    else:
+        fit_indices = left_indices if left_indices else right_indices
+        slope, intercept = _fit_params(fit_indices)
+        damping_factor = 0.35
+
+        if left_indices:
+            anchor_idx = start_idx - 1
+        else:
+            anchor_idx = end_idx + 1
+
+        anchor_x = float(x_values[anchor_idx])
+        anchor_y = float(corrected_y_values[anchor_idx])
+        fitted_anchor_y = slope * anchor_x + intercept
+
+        for idx in segment_indices:
+            target_x = float(x_values[idx])
+            fitted_target_y = slope * target_x + intercept
+            candidate_delta = fitted_target_y - fitted_anchor_y
+            candidate_value = anchor_y + candidate_delta * damping_factor
+            smoothed_values.append(float(candidate_value))
+
+    if len(boundary_values) == 2 and lower_bound is not None and upper_bound is not None:
+        smoothed_values = [
+            float(np.clip(value, lower_bound, upper_bound))
+            for value in smoothed_values
+        ]
+    elif len(boundary_values) == 1 and fit_indices:
+        anchor_y = boundary_values[0]
+        fit_reference_y = [float(corrected_y_values[idx]) for idx in fit_indices]
+        local_step = max(
+            float(np.mean(np.abs(np.diff(np.array(fit_reference_y, dtype=float)))))
+            if len(fit_reference_y) > 1 else 0.0,
+            1e-6,
+        )
+        constrained_values = []
+        for offset, value in enumerate(smoothed_values, start=1):
+            max_deviation = local_step * offset * 0.9
+            constrained_values.append(
+                float(np.clip(value, anchor_y - max_deviation, anchor_y + max_deviation))
+            )
+        smoothed_values = constrained_values
+
     return [float(value) for value in smoothed_values]
+
+def _collect_segment_reference_values(
+    corrected_y_values: List[float],
+    segment_indices: List[int],
+    window_size: int = 6
+) -> List[float]:
+    if not segment_indices:
+        return []
+
+    start_idx = segment_indices[0]
+    end_idx = segment_indices[-1]
+    left_segment = corrected_y_values[max(0, start_idx - window_size):start_idx]
+    right_segment = corrected_y_values[end_idx + 1:min(len(corrected_y_values), end_idx + window_size + 1)]
+    return [float(value) for value in left_segment + right_segment]
 
 
 def _calculate_segment_average_threshold(corrected_y_values: List[float], segment_indices: List[int]) -> float:
     if not segment_indices:
         return 1e-12
 
-    start_idx = segment_indices[0]
-    end_idx = segment_indices[-1]
-    left_segment = corrected_y_values[max(0, start_idx - 6):start_idx]
-    right_segment = corrected_y_values[end_idx + 1:min(len(corrected_y_values), end_idx + 7)]
+    reference_values = _collect_segment_reference_values(corrected_y_values, segment_indices)
 
     # 只拿刺段两侧正常点的波动来算平均阈值，不让刺本身把阈值抬高。
     diffs = []
-    if len(left_segment) >= 2:
-        diffs.extend(np.abs(np.diff(np.array(left_segment, dtype=float))).tolist())
-    if len(right_segment) >= 2:
-        diffs.extend(np.abs(np.diff(np.array(right_segment, dtype=float))).tolist())
+    if len(reference_values) >= 2:
+        diffs.extend(np.abs(np.diff(np.array(reference_values, dtype=float))).tolist())
 
     if not diffs:
         return 1e-12
@@ -410,49 +884,6 @@ def _calculate_segment_average_threshold(corrected_y_values: List[float], segmen
     # 这里的 4.0 就是“平均阈值”的倍率，想调高/调低双刺高度，改这里最直接。
     average_threshold = float(np.mean(diffs)) * 0.5
     return max(average_threshold, 1e-12)
-
-
-def _estimate_baseline_step(y_values: List[float]) -> float:
-    if len(y_values) < 2:
-        return 1.0
-    diffs = np.abs(np.diff(np.array(y_values, dtype=float)))
-    median_diff = float(np.median(diffs)) if len(diffs) > 0 else 0.0
-    return max(median_diff, 1.0)
-
-
-def _predict_point_from_previous(x_values: List[float], y_values: List[float], target_idx: int, history_size: int = 4) -> float:
-    # 单刺修复用：只根据前面几个正常点外推当前点应该落在哪。
-    history_start = max(0, target_idx - history_size)
-    history_x = x_values[history_start:target_idx]
-    history_y = y_values[history_start:target_idx]
-    target_x = float(x_values[target_idx])
-
-    return _predict_value_from_history(history_x, history_y, target_x, fallback_value=float(y_values[target_idx]))
-
-
-def _predict_value_from_history(
-    history_x: List[float],
-    history_y: List[float],
-    target_x: float,
-    fallback_value: Optional[float] = None
-) -> float:
-    history_x = np.array(history_x, dtype=float)
-    history_y = np.array(history_y, dtype=float)
-
-    if len(history_y) == 0:
-        return float(fallback_value if fallback_value is not None else 0.0)
-    if len(history_y) == 1:
-        return float(history_y[-1])
-
-    degree = 1 if len(history_y) == 2 else min(2, len(history_y) - 1)
-    try:
-        coeffs = np.polyfit(history_x, history_y, deg=degree)
-        return float(np.polyval(coeffs, target_x))
-    except Exception:
-        if len(history_y) >= 2:
-            slope = history_y[-1] - history_y[-2]
-            return float(history_y[-1] + slope)
-        return float(history_y[-1])
 
 
 # ==================== 倒刺处理函数（保持原有逻辑） ====================

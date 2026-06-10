@@ -48,4 +48,5 @@ docs/_build/
 venv/
 .venv
 .vscode/
+debug_logs/
 .idea/

@@ -33,7 +33,7 @@ SCENARIOS = {
         'file_label': '单个向上倒刺',
     },
     'continuous_double_spike_three_points': {
-        'target_points': [560],
+        'target_points': [560, 559, 558],
         'mutations': {
             560: 210.0,
             559: 110.0,
@@ -46,7 +46,7 @@ SCENARIOS = {
         'file_label': '连续双刺三点形态',
     },
     'continuous_double_spike_four_points': {
-        'target_points': [560],
+        'target_points': [560, 559, 558, 557],
         'mutations': {
             560: 210.0,
             559: 120.0,
@@ -73,7 +73,7 @@ SCENARIOS = {
         'file_label': '单个向下倒刺',
     },
     'discontinuous_double_spike': {
-        'target_points': [560],
+        'target_points': [560, 559, 558],
         'mutations': {
             560: 210.0,
             559: 8.0,
@@ -99,7 +99,7 @@ SCENARIOS = {
         'file_label': '跨批次首点单刺',
     },
     'cross_batch_first_point_continuous_double_spike': {
-        'target_points': [550],
+        'target_points': [550, 549, 548],
         'mutations': {
             550: 215.0,
             549: 120.0,
@@ -110,6 +110,19 @@ SCENARIOS = {
         'expect_unchanged': [547],
         'title': '跨批次首点连续双刺',
         'file_label': '跨批次首点连续双刺',
+    },
+    'single_spike_with_untargeted_adjacent_outlier': {
+        'target_points': [560],
+        'mutations': {
+            561: 260.0,
+            560: 210.0,
+            559: 0.0,
+            558: 0.0,
+        },
+        'expect_changed': [560],
+        'expect_unchanged': [561, 559, 558],
+        'title': '单刺前邻点异常但未标记',
+        'file_label': '单刺前邻点异常但未标记',
     },
 }
 
@@ -238,6 +251,7 @@ def _run_case_and_assert(scenario_name):
         'discontinuous_double_spike',
         'cross_batch_first_point_spike',
         'cross_batch_first_point_continuous_double_spike',
+        'single_spike_with_untargeted_adjacent_outlier',
     ],
 )
 def test_process_targeted_spike_removal_scenarios(scenario_name):
