@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from app.db import init_db
 from app.user.routes import router as user_router
 from app.UVWin_algorithm.routes import router as UVWin_algorithm_router
+from app.dog.routes import router as dog_router
 from exceptions.command_exception import APIException
 
 @asynccontextmanager
@@ -17,6 +18,7 @@ app = FastAPI(lifespan=lifespan)
 # app.include_router(user.router, prefix="/users", tags=["Users"])
 app.include_router(UVWin_algorithm_router, prefix='')
 app.include_router(user_router, prefix='')
+app.include_router(dog_router, prefix='')
 
 
 @app.exception_handler(APIException)
