@@ -7,7 +7,11 @@ from pydantic import BaseModel, Field
 from fastapi import APIRouter
 
 import sympy as sp
-from sympy import sympify
+from sympy.parsing.sympy_parser import (
+    parse_expr,
+    standard_transformations,
+    implicit_multiplication_application,
+)
 from sympy.parsing.latex import parse_latex
 
 from exceptions.error import ErrorCode
@@ -177,8 +181,9 @@ def parse_formula_with_sympy(formula_string, variable_list=None):
                 print(f"LaTeX解析结果: {expr}")
         else:
             print(f"检测到普通表达式: {formula_string}")
-            # 使用sympy的普通表达式解析器
-            expr = sympify(formula_string)
+            # 支持隐式乘法，例如 11.85(B-A)
+            transformations = standard_transformations + (implicit_multiplication_application,)
+            expr = parse_expr(formula_string, transformations=transformations, evaluate=True)
             print(f"普通表达式解析结果: {expr}")
         
         return expr

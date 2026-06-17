@@ -4,15 +4,21 @@ import ctypes  # ctypes: Python 标准库，用于调用 C DLL 函数
 import os      # os: 用于路径处理（可选，加 DLL 目录）
 import sys
 from Crypto.PublicKey import RSA
-from Crypto.Cipher import PKCS1_OAEP
 import base64
 import json
-import wmi
-from cryptography.hazmat.primitives.asymmetric import padding
 from Crypto.Cipher import AES
 import time
 from Crypto.Cipher import AES, PKCS1_v1_5
 from Crypto.Random import get_random_bytes
+
+IS_WINDOWS = sys.platform.startswith("win")
+WMI_IMPORT_ERROR = None
+
+try:
+    import wmi
+except Exception as exc:
+    wmi = None
+    WMI_IMPORT_ERROR = exc
 
 PRIVATE_KEY_PEM = """
 -----BEGIN RSA PRIVATE KEY-----
@@ -65,6 +71,8 @@ ET_UNKNOWN = 0x07             # 未知错误
 ET_PIN_ERR_MASK = 0x0F        # PIN 错误掩码
 ET_PIN_ERR_MAX = 0xFF         # PIN 错误次数超限（锁死）
 SALT = '39fa239gsdfb98s8'
+DOG_UNSUPPORTED_PLATFORM_ERR = 0x1001
+DOG_DLL_INIT_ERR = 0x1002
 
 # PIN 类型常量（从头文件复制）
 ET_VERIFY_USERPIN = 0         # User PIN 验证
@@ -73,6 +81,8 @@ ET_VERIFY_SOPIN = 1           # SO PIN 验证
 # 加载 DLL（使用 windll，因为 API 是 __stdcall 约定，Windows 常见）
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(script_dir))
+et_dll = None
+DLL_INIT_ERROR = None
 
 
 def _resolve_dll_path():
@@ -92,50 +102,58 @@ def _resolve_dll_path():
     raise RuntimeError(f"DLL 不存在: {checked}. 请确认文件已放到项目根目录或打包输出根目录")
 
 
-dll_path = _resolve_dll_path()
-dll_dir = os.path.dirname(dll_path)
+def _ensure_dll_loaded():
+    global et_dll
+    global DLL_INIT_ERROR
 
-print(f"调试: 当前 cwd = {os.getcwd()}")
-print(f"调试: DLL 绝对路径 = {dll_path}")
-print(f"调试: DLL 存在? = {os.path.exists(dll_path)}")
+    if et_dll is not None:
+        return True
+    if DLL_INIT_ERROR is not None:
+        return False
+    if not IS_WINDOWS:
+        DLL_INIT_ERROR = "当前系统不是 Windows，密码狗功能仅在 Windows 可用"
+        return False
 
-# 添加 DLL 目录到搜索路径（解决依赖）
-os.add_dll_directory(dll_dir)
+    try:
+        dll_path = _resolve_dll_path()
+        dll_dir = os.path.dirname(dll_path)
 
-try:
-    et_dll = ctypes.windll.LoadLibrary(dll_path)  # 用绝对路径
-    print("调试: DLL 加载成功！")  # 成功提示
-except OSError as e:
-    raise RuntimeError(f"无法加载 DLL {DLL_NAME}: {e}. 可能依赖缺失（装 VC++ Redist），或驱动未装。cwd={os.getcwd()}, DLL={dll_path}")
+        # 添加 DLL 目录到搜索路径（解决依赖）
+        if hasattr(os, "add_dll_directory"):
+            os.add_dll_directory(dll_dir)
 
-# 为 et_Verify 函数定义 argtypes 和 restype（ctypes 必须指定参数/返回类型）
-et_dll.et_Verify.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_char_p]  # HANDLE, Flags, PIN (bytes)
-et_dll.et_Verify.restype = ctypes.c_ulong  # 返回 ET_STATUS (unsigned long)
+        et_dll = ctypes.windll.LoadLibrary(dll_path)  # 用绝对路径
 
-# 为 et_OpenToken 定义（其他函数类似，按需加）
-et_dll.et_OpenToken.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_char_p, ctypes.c_int]
-et_dll.et_OpenToken.restype = ctypes.c_ulong
+        # 为 et_Verify 函数定义 argtypes 和 restype（ctypes 必须指定参数/返回类型）
+        et_dll.et_Verify.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_char_p]  # HANDLE, Flags, PIN (bytes)
+        et_dll.et_Verify.restype = ctypes.c_ulong  # 返回 ET_STATUS (unsigned long)
 
-et_dll.et_CloseToken.argtypes = [ctypes.c_void_p]
-et_dll.et_CloseToken.restype = ctypes.c_ulong
+        # 为 et_OpenToken 定义（其他函数类似，按需加）
+        et_dll.et_OpenToken.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_char_p, ctypes.c_int]
+        et_dll.et_OpenToken.restype = ctypes.c_ulong
 
+        et_dll.et_CloseToken.argtypes = [ctypes.c_void_p]
+        et_dll.et_CloseToken.restype = ctypes.c_ulong
 
+        # 按你的 C 函数声明设置参数类型
+        et_dll.et_Read.argtypes = [
+            ctypes.c_void_p,      # ET_HANDLE hHandle（多数 dongle 厂都是 pointer）
+            ctypes.c_ushort,      # WORD offset
+            ctypes.c_int,         # int Len
+            ctypes.POINTER(ctypes.c_ubyte)  # unsigned char* pucReadBuf
+        ]
+        et_dll.et_Read.restype = ctypes.c_int   # ET_STATUS 通常是 int
 
-# 按你的 C 函数声明设置参数类型
-et_dll.et_Read.argtypes = [
-    ctypes.c_void_p,      # ET_HANDLE hHandle（多数 dongle 厂都是 pointer）
-    ctypes.c_ushort,      # WORD offset
-    ctypes.c_int,         # int Len
-    ctypes.POINTER(ctypes.c_ubyte)  # unsigned char* pucReadBuf
-]
+        et_dll.et_Write.argtypes = [ctypes.c_void_p, ctypes.c_ushort, ctypes.c_int, ctypes.c_char_p]
+        et_dll.et_Write.restype = ctypes.c_ulong
 
-et_dll.et_Read.restype = ctypes.c_int   # ET_STATUS 通常是 int
-
-et_dll.et_Write.argtypes = [ctypes.c_void_p, ctypes.c_ushort, ctypes.c_int, ctypes.c_char_p]
-et_dll.et_Write.restype = ctypes.c_ulong
-
-et_dll.et_FindToken.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_int)]
-et_dll.et_FindToken.restype = ctypes.c_ulong
+        et_dll.et_FindToken.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_int)]
+        et_dll.et_FindToken.restype = ctypes.c_ulong
+        return True
+    except Exception as e:
+        DLL_INIT_ERROR = str(e)
+        et_dll = None
+        return False
 
 class GmpDog:
     """
@@ -152,6 +170,16 @@ class GmpDog:
         """
         self.mHandle = None  # ET_HANDLE (ctypes.c_void_p 类型，C 的 void*)
         self.mLastError = ET_SUCCESS  # 上次操作错误码
+
+    def _ensure_runtime_ready(self):
+        if _ensure_dll_loaded():
+            return True
+
+        if IS_WINDOWS:
+            self.mLastError = DOG_DLL_INIT_ERR
+        else:
+            self.mLastError = DOG_UNSUPPORTED_PLATFORM_ERR
+        return False
     
     def findDog(self):
         """
@@ -159,6 +187,9 @@ class GmpDog:
         - 返回 True 如果找到（count > 0 且无错）。
         - 错误：无狗插上 → ET_COMMUNICATIONS_ERROR。
         """
+        if not self._ensure_runtime_ready():
+            return False
+
         count = ctypes.c_int(0)  # 输出参数：狗数量 (int*)
         self.mLastError = et_dll.et_FindToken(G_PID, ctypes.byref(count))  # 调用 DLL，byref 传引用
         return self.mLastError == ET_SUCCESS and count.value > 0  # 成功且至少 1 个狗
@@ -293,6 +324,9 @@ class GmpDog:
         """
         if self.mHandle is None:
             return True
+        if not self._ensure_runtime_ready():
+            self.mHandle = None
+            return False
         self.mLastError = et_dll.et_CloseToken(self.mHandle)
         self.mHandle = None
         return self.mLastError == ET_SUCCESS
@@ -302,6 +336,9 @@ class GmpDog:
         打开狗：调用 et_OpenToken，PID + index=1（第一个狗）。
         - 返回 True（成功），self.mHandle 更新。
         """
+        if not self._ensure_runtime_ready():
+            return False
+
         if self.mHandle is not None:
             self.close()  # 先关闭旧句柄
         
@@ -316,6 +353,9 @@ class GmpDog:
         - SO PIN 计算：sprintf("%ldDD%d7F%s", 576741, 21, "C401") → "576741DD217FC401"。
         - 返回 True（成功）。
         """
+        if not self._ensure_runtime_ready():
+            return False
+
         if use_so:
             so_pin = b"576741DD217FC401"  # 硬编码计算结果 (bytes)
             self.mLastError = et_dll.et_Verify(self.mHandle, ET_VERIFY_SOPIN, G_PIN)
@@ -347,6 +387,10 @@ class GmpDog:
             return "Err: open the device fail!"
         elif self.mLastError == 0xF0:
             return "Err: PIN have been locked!"
+        elif self.mLastError == DOG_UNSUPPORTED_PLATFORM_ERR:
+            return "Err: this platform is not supported for dongle feature (Windows only)!"
+        elif self.mLastError == DOG_DLL_INIT_ERR:
+            return f"Err: dongle runtime init failed: {DLL_INIT_ERROR}"
         elif self.mLastError & ET_PIN_ERR_MASK == ET_PIN_ERR_MASK:  # PIN 错掩码
             return "Err: PIN is wrong!"
         else:
@@ -356,6 +400,11 @@ class GmpDog:
     def get_hardware_info(self):
         """获取 Windows 硬件指纹（字典）"""
         """使用WMI获取硬件信息"""
+        if not IS_WINDOWS:
+            raise RuntimeError("硬件指纹仅支持 Windows")
+        if wmi is None:
+            raise RuntimeError(f"WMI 不可用: {WMI_IMPORT_ERROR}")
+
         c = wmi.WMI()
         hardware_info = {}
     

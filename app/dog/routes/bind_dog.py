@@ -1,6 +1,8 @@
 from fastapi import APIRouter
+from fastapi import HTTPException
 from pydantic import BaseModel, Field
 from ..gmp_dog import GmpDog
+import sys
 
 router = APIRouter()
 
@@ -16,6 +18,9 @@ class OutputSchema(BaseModel):
 
 @router.post('/bind_dog', response_model=OutputSchema)
 def bind_dog(input: InputSchema):
+    if not sys.platform.startswith('win'):
+        raise HTTPException(status_code=400, detail='当前环境不支持密码狗接口（仅 Windows）')
+
     bid = input.bid
     dog = GmpDog()
     if dog.findDog():
