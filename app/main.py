@@ -11,6 +11,8 @@ from exceptions.command_exception import APIException
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    print("应用启动成功！")
+    print("UV-iNexus-1.0.1.260529-INS-REL")
     yield
 
 app = FastAPI(lifespan=lifespan)
