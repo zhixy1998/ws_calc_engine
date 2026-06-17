@@ -39,6 +39,10 @@ def algebraic_operations(data: InputSchema):
     print(f"变量列表: {independent_variable_string_list}")
     print(f"数值列表: {independent_variable_value_list}")
 
+
+    print("raw:", data.formula_string)
+    print("repr:", repr(data.formula_string))
+
     # 检查变量和数值列表长度是否一致
     if len(independent_variable_string_list) != len(independent_variable_value_list):
         raise APIException(ErrorCode.INDEPENDENT_ARIABLE_STRING_VALUE_LENGTH_NOT_EQUAL)
