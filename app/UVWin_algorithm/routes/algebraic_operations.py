@@ -3,6 +3,7 @@
 """
 import numpy as np
 import re
+import sys
 from pydantic import BaseModel, Field
 from fastapi import APIRouter
 
@@ -39,6 +40,10 @@ def algebraic_operations(data: InputSchema):
     print(f"变量列表: {independent_variable_string_list}")
     print(f"数值列表: {independent_variable_value_list}")
 
+    print("python executable:", sys.executable)
+    print("python version:", sys.version)
+    print("sympy version:", sp.__version__)
+    print("parse_latex module:", parse_latex.__module__)
 
     print("raw:", data.formula_string)
     print("repr:", repr(data.formula_string))
@@ -175,20 +180,27 @@ def parse_formula_with_sympy(formula_string, variable_list=None):
                 # 使用sympy的LaTeX解析器
                 expr = parse_latex(processed_formula)
                 print(f"LaTeX解析结果: {expr}")
+                print("LaTeX解析结果 repr:", repr(expr))
+                print("LaTeX解析结果 type:", type(expr))
                 
                 # 恢复原始变量名
                 expr = postprocess_sympy_expression(expr, temp_to_original)
                 print(f"变量名恢复后: {expr}")
+                print("变量名恢复后 repr:", repr(expr))
             else:
                 # 直接解析
                 expr = parse_latex(formula_string)
                 print(f"LaTeX解析结果: {expr}")
+                print("LaTeX解析结果 repr:", repr(expr))
+                print("LaTeX解析结果 type:", type(expr))
         else:
             print(f"检测到普通表达式: {formula_string}")
             # 支持隐式乘法，例如 11.85(B-A)
             transformations = standard_transformations + (implicit_multiplication_application,)
             expr = parse_expr(formula_string, transformations=transformations, evaluate=True)
             print(f"普通表达式解析结果: {expr}")
+            print("普通表达式解析结果 repr:", repr(expr))
+            print("普通表达式解析结果 type:", type(expr))
         
         return expr
     except Exception as e:
