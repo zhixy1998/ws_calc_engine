@@ -33,6 +33,7 @@ class PeakResponse(BaseModel):
     peak_indices: List[int] = Field(..., description="峰值在原始数组中的索引位置")
     peak_areas: Optional[List[float]] = Field(None, description="峰面积")
     peak_widths: Optional[List[float]] = Field(None, description="半峰宽")
+    peak_end_x: List[float] = Field(..., description="每个峰结束的 x 坐标（基线=max(左右谷高度)，峰右侧首次回落至基线处的 x，线性插值）")
 
     smoothed_y: Optional[List[Union[float, str]]] = Field(None, description="平滑后的Y值")
     differentiated_y: Optional[List[float]] = Field(None, description="微分后的Y值")
@@ -70,8 +71,50 @@ def find_peaks_post(data: PeakRequest):
         right_ip = int(results_half[3][i])  # 右边界索引
         area = round(np.trapz(y_smooth[left_ip:right_ip + 1], x[left_ip:right_ip + 1]), round_num)
         peak_areas.append(area)
-    
 
+    # 计算每个峰的结束 x 坐标（peak_end_x）
+    # 标准：基线 = max(左侧谷高度, 右侧谷高度)，即 prominence 的基底高度。
+    #      峰右侧首次回落到该基线即为峰的结束点，线性插值精确计算 x。
+    #      若无左侧谷，则以第一个数据点的 y 值代替。
+    #      若无右侧谷，则以左侧谷高度代替（退化为单侧基线）。
+    #      若始终未回落到基线，则取最后一个数据点。
+    # 原理：prominence（峰谷差）的基底是左右两侧谷中较高的那个。
+    #      基线移动时（右侧谷更高），峰结束于回落到新基线的第一个点。
+    #      基线不移动时（左右谷相等），与原来行为一致。
+    local_minima = argrelmin(y_smooth, order=1)[0]  # 一阶局部极小值（谷）
+    peak_end_x_list = []
+    for p in peaks:
+        # 左侧谷高度
+        left_valleys = local_minima[local_minima < p]
+        left_h = float(y_smooth[left_valleys[-1]]) if len(left_valleys) > 0 else float(y_smooth[0])
+        # 右侧谷高度
+        right_valleys = local_minima[local_minima > p]
+        right_h = float(y_smooth[right_valleys[0]]) if len(right_valleys) > 0 else left_h
+        # 基线 = prominence 基底 = max(左谷, 右谷)
+        baseline_y = max(left_h, right_h)
+        # 从峰右侧开始，找第一个 y <= baseline_y 的点
+        found = False
+        for i in range(int(p) + 1, len(x)):
+            if float(y_smooth[i]) <= baseline_y:
+                # 线性插值：在 (i-1, y[i-1]) 和 (i, y[i]) 之间找 y=baseline_y 的 x
+                if i > int(p) + 1 and float(y_smooth[i - 1]) > baseline_y:
+                    x1, x2 = float(x[i - 1]), float(x[i])
+                    y1, y2 = float(y_smooth[i - 1]), float(y_smooth[i])
+                    if y1 != y2:
+                        end_x = x1 + (x2 - x1) * (baseline_y - y1) / (y2 - y1)
+                    else:
+                        end_x = x2
+                else:
+                    end_x = float(x[i])
+                peak_end_x_list.append(end_x)
+                found = True
+                break
+        if not found:
+            # 始终未回落到基线，取最后一个数据点
+            peak_end_x_list.append(float(x[-1]))
+
+    # 确保 peak_x 与 peak_end_x 一一对应
+    assert len(peak_end_x_list) == len(peaks), f"peak_end_x({len(peak_end_x_list)}) != peaks({len(peaks)})"
 
     if round_num:
         peak_y_raw = y_smooth[peaks].tolist()
@@ -98,6 +141,7 @@ def find_peaks_post(data: PeakRequest):
         "num_peaks": len(peaks),
         "peak_areas": peak_areas,
         "peak_widths": peak_width_list,
+        "peak_end_x": peak_end_x_list,
 
         "smoothed_y": convert_scientific_notation(smoothed_y),
         "differentiated_y": differentiated_y

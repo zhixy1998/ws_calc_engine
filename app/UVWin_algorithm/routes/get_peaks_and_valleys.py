@@ -34,6 +34,7 @@ class PeaksAndValleysResponse(BaseModel):
     peak_indices: List[int] = Field(..., description="峰值在原始数组中的索引位置")
     peak_areas: Optional[List[float]] = Field(None, description="峰面积")
     peak_widths: Optional[List[float]] = Field(None, description="半峰宽")
+    peak_end_x: List[float] = Field(..., description="每个峰结束的 x 坐标（基线=max(左右谷高度)，峰右侧首次回落至基线处的 x，线性插值）")
 
     # 谷数据
     valley_x: List[float] = Field(..., description="谷值对应的 x 坐标")
@@ -201,9 +202,41 @@ def find_peaks_and_valleys_post(data: PeaksAndValleysRequest):
             peak_areas.append(area)
         
         peak_width_list = [round(i, round_num) for i in results_half[0].tolist()]
+
+        # 计算每个峰的结束 x 坐标（peak_end_x）
+        # 标准：基线 = max(左侧谷高度, 右侧谷高度)，即 prominence 基底。
+        #      峰右侧首次回落到该基线即为结束点，线性插值。
+        local_minima = argrelmin(y_smooth, order=1)[0]
+        peak_end_x_list = []
+        for p in peaks:
+            left_valleys = local_minima[local_minima < p]
+            left_h = float(y_smooth[left_valleys[-1]]) if len(left_valleys) > 0 else float(y_smooth[0])
+            right_valleys = local_minima[local_minima > p]
+            right_h = float(y_smooth[right_valleys[0]]) if len(right_valleys) > 0 else left_h
+            baseline_y = max(left_h, right_h)
+            found = False
+            for i in range(int(p) + 1, len(x)):
+                if float(y_smooth[i]) <= baseline_y:
+                    if i > int(p) + 1 and float(y_smooth[i - 1]) > baseline_y:
+                        x1, x2 = float(x[i - 1]), float(x[i])
+                        y1, y2 = float(y_smooth[i - 1]), float(y_smooth[i])
+                        if y1 != y2:
+                            end_x = x1 + (x2 - x1) * (baseline_y - y1) / (y2 - y1)
+                        else:
+                            end_x = x2
+                    else:
+                        end_x = float(x[i])
+                    peak_end_x_list.append(end_x)
+                    found = True
+                    break
+            if not found:
+                peak_end_x_list.append(float(x[-1]))
+        # 确保 peak_x 与 peak_end_x 一一对应
+        assert len(peak_end_x_list) == len(peaks), f"peak_end_x({len(peak_end_x_list)}) != peaks({len(peaks)})"
     else:
         peak_areas = []
         peak_width_list = []
+        peak_end_x_list = []
 
     # === 寻谷部分 ===
     # 将Y值取反以寻谷
@@ -267,6 +300,7 @@ def find_peaks_and_valleys_post(data: PeaksAndValleysRequest):
         "num_peaks": len(peaks),
         "peak_areas": peak_areas,
         "peak_widths": peak_width_list,
+        "peak_end_x": peak_end_x_list,
 
         # 谷数据
         "valley_indices": valleys.tolist(),

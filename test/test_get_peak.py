@@ -22,7 +22,7 @@ async def test_get_peak(async_client):
     data = response.json()
     # 返回结果结构性测试
     print("data========", data)
-    assert len(data['peak_x']) == len(data['peak_y']) == len(data['peak_indices']) == len(data['peak_areas']) == len(data['peak_widths'])
+    assert len(data['peak_x']) == len(data['peak_y']) == len(data['peak_indices']) == len(data['peak_areas']) == len(data['peak_widths']) == len(data['peak_end_x'])
     # 返回结果正确性测试
     assert data['code'] == 0
     assert data['peak_x'] == [5]
@@ -31,6 +31,7 @@ async def test_get_peak(async_client):
     assert data['peak_indices'] == [5]
     assert data['peak_areas'] == [1.65]
     assert data['peak_widths'] == [1.167]
+    assert data['peak_end_x'] == [6]
     assert data['differentiated_y'] == [1.1,0.2,0.65,-0.1,0.25,0.2,-0.75,-0.25,-0.75,-0.2]
 
 # 此测试用例验证了不同的height参数对峰值检测的影响，确保height正确限制了检测的峰值高度。
