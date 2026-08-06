@@ -11,7 +11,7 @@ import sympy as sp
 from sympy.parsing.sympy_parser import (
     parse_expr,
     standard_transformations,
-    implicit_multiplication_application,
+    implicit_multiplication,
 )
 from sympy.parsing.latex import parse_latex
 
@@ -20,6 +20,7 @@ from exceptions.command_exception import APIException
 
 
 router = APIRouter()
+
 
 class InputSchema(BaseModel):
     formula_string: str = Field(..., description="计算公式字符串，支持普通表达式和LaTeX格式", json_schema_extra={'example':'(体积+0.9)/重量*稀释倍数'})
@@ -63,11 +64,6 @@ def algebraic_operations(data: InputSchema):
     formula_variables = extract_variables_from_sympy_expr(expr)
     print(f"公式中的变量: {formula_variables}")
     
-    # 检查所有提供的变量是否在公式中存在
-    # for v in independent_variable_string_list:
-    #     if v not in formula_variables:
-    #         raise APIException(ErrorCode.VARIABLE_NOT_IN_FORMULA)
-
     # 检查变量值是否为数字
     for v in independent_variable_value_list:
         try:
@@ -75,10 +71,17 @@ def algebraic_operations(data: InputSchema):
         except ValueError:
             raise APIException(ErrorCode.VARIABLE_VALUE_NOT_NUMERIC)
     
-    # 构建变量字典
+    # 构建变量字典；重复变量按最后一次传入值生效，保持当前调用兼容性。
     variable_dict = {}
     for i, var_name in enumerate(independent_variable_string_list):
         variable_dict[var_name] = independent_variable_value_list[i]
+
+    missing_variables = sorted(set(formula_variables) - set(variable_dict.keys()))
+    if missing_variables:
+        raise APIException(
+            ErrorCode.INVALID_ARGUMENT,
+            message=f"公式中缺少变量赋值: {','.join(missing_variables)}"
+        )
     
     # 使用sympy进行计算
     result = substitute_and_evaluate(expr, variable_dict)
@@ -195,9 +198,21 @@ def parse_formula_with_sympy(formula_string, variable_list=None):
                 print("LaTeX解析结果 type:", type(expr))
         else:
             print(f"检测到普通表达式: {formula_string}")
-            # 支持隐式乘法，例如 11.85(B-A)
-            transformations = standard_transformations + (implicit_multiplication_application,)
-            expr = parse_expr(formula_string, transformations=transformations, evaluate=True)
+            # 支持隐式乘法，例如 11.85(B-A)。这里不能使用
+            # implicit_multiplication_application，它会把 C1 拆成 C*1。
+            transformations = standard_transformations + (implicit_multiplication,)
+            local_dict = {
+                var_name: sp.Symbol(var_name)
+                for var_name in (variable_list or [])
+                if var_name
+            }
+            print(f"普通表达式变量映射: {local_dict}")
+            expr = parse_expr(
+                formula_string,
+                local_dict=local_dict,
+                transformations=transformations,
+                evaluate=True,
+            )
             print(f"普通表达式解析结果: {expr}")
             print("普通表达式解析结果 repr:", repr(expr))
             print("普通表达式解析结果 type:", type(expr))

@@ -20,3 +20,18 @@ async def test_algebraic_operations(async_client):
     # print('data:', data)
     assert data['code'] == 0
     assert data['result'] == 1.45
+
+
+@pytest.mark.asyncio
+async def test_algebraic_operations_keeps_letter_digit_variable(async_client):
+    post_json = {
+        "formula_string": "A+C1",
+        "independent_variable_string": "A,C1",
+        "independent_variable_value": "1.9427,1.0000"
+    }
+
+    response = await async_client.post(BASE_URL, json=post_json)
+    data = response.json()
+
+    assert data['code'] == 200
+    assert data['result'] == 2.9427
